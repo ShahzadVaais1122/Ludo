@@ -9,13 +9,11 @@
     <style>
       body {
         font-family: 'Poppins', sans-serif;
-        /* Cosmic Gradient Background */
         background: radial-gradient(circle at 50% 0%, #312e81 0%, #1e1b4b 40%, #020617 100%);
         background-attachment: fixed;
         color: white;
-        overflow: hidden; /* Prevent scrolling during play */
+        overflow: hidden;
       }
-      /* Custom Dice Animation Classes */
       @keyframes roll {
         0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
         100% { transform: rotateX(720deg) rotateY(720deg) rotateZ(720deg); }
@@ -23,21 +21,12 @@
       .animate-roll {
         animation: roll 0.5s ease-in-out;
       }
-      .perspective-1000 {
-        perspective: 1000px;
-      }
-      .transform-style-3d {
-        transform-style: preserve-3d;
-      }
-      
-      /* Glassmorphism Utilities */
       .glass-panel {
         background: rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.1);
       }
-      
       .glass-card {
         background: rgba(0, 0, 0, 0.3);
         backdrop-filter: blur(10px);
@@ -49,13 +38,16 @@
   "imports": {
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, Share2, ShoppingCart, Coins, Lock, Check, Sparkles, Globe, Loader2 } from 'lucide-react';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2 } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
@@ -60,7 +60,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   };
 
   const handleStart = () => {
-    let players = [];
+    let players: any[] = [];
     if (mode === 'AI') {
         // Red (P1) -> Green (Bot) -> Yellow (Bot) -> Blue (Bot)
         players = [

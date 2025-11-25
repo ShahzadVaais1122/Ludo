@@ -166,7 +166,7 @@ const Board: React.FC<BoardProps> = ({ gameState, onPieceClick }) => {
   });
 
   // Base Overlay Renderer
-  const renderBase = (color: PlayerColor, x: number, y: number, bgColor: string, starColor: string) => (
+  const renderBase = (_color: PlayerColor, x: number, y: number, bgColor: string, starColor: string) => (
       <div className={`absolute ${bgColor} border-[2px] border-black flex items-center justify-center`}
            style={{
                left: `calc(${x * 100 / 15}%)`,

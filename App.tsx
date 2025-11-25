@@ -4,7 +4,7 @@ import Lobby from './screens/Lobby';
 import Board from './components/Board';
 import Dice from './components/Dice';
 import { canMovePiece, checkForKill, getBotMove } from './utils/gameLogic';
-import { RotateCcw, Volume2, VolumeX, Menu, Trophy, Coins, Home, Settings, Music, Zap, Brain, X } from 'lucide-react';
+import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X } from 'lucide-react';
 import { DICE_SKINS } from './constants';
 
 const INITIAL_PIECES = (color: PlayerColor): Piece[] => [
@@ -135,7 +135,7 @@ const App: React.FC = () => {
     }
   };
 
-  const initGame = (mode: string, initialPlayers: any[]) => {
+  const initGame = (_mode: string, initialPlayers: any[]) => {
     // Standard Clockwise Turn Order: Red -> Green -> Yellow -> Blue
     const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
     

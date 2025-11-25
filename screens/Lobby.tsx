@@ -100,12 +100,12 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
           <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[100px]"></div>
       </div>
 
-      <div className="max-w-md w-full glass-panel rounded-3xl p-8 shadow-2xl relative animate-[fadeIn_0.5s_ease-out] my-auto">
+      <div className="max-w-md w-full glass-panel rounded-3xl p-5 sm:p-8 shadow-2xl relative animate-[fadeIn_0.5s_ease-out] my-auto">
         
         {/* Header with Balance */}
         <div className="flex justify-between items-center mb-6">
             <div className="flex flex-col">
-                <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-500 to-purple-500 drop-shadow-sm">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-500 to-purple-500 drop-shadow-sm">
                     LUDO MASTER
                 </h1>
                 <span className="text-xs text-indigo-200 tracking-widest uppercase opacity-70">Royal Edition</span>
@@ -127,13 +127,13 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             type="text" 
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
-            className="w-full bg-black/30 text-white p-4 rounded-2xl mt-2 focus:ring-2 focus:ring-purple-500 outline-none border border-white/10 transition-all placeholder:text-white/20"
+            className="w-full bg-black/30 text-white p-3 sm:p-4 rounded-2xl mt-2 focus:ring-2 focus:ring-purple-500 outline-none border border-white/10 transition-all placeholder:text-white/20 text-sm sm:text-base"
             placeholder="Enter nickname"
           />
         </div>
 
         {/* Quick Mode Selection */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
             <button 
                 onClick={() => setMode('AI')}
                 className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'AI' ? 'border-purple-500 bg-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}

@@ -209,7 +209,7 @@ const Board: React.FC<BoardProps> = ({ gameState, onPieceClick }) => {
   );
 
   return (
-    <div className="w-full max-w-[600px] aspect-square relative bg-[#5c4033] p-3 md:p-6 rounded-sm shadow-2xl mx-auto max-h-[85vh] select-none">
+    <div className="w-full max-w-[600px] aspect-square relative bg-[#5c4033] p-1 sm:p-3 md:p-6 rounded-sm shadow-2xl mx-auto max-h-[85vh] select-none">
       
       {/* The Board Area */}
       <div className="w-full h-full bg-white relative border-[2px] border-black">

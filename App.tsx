@@ -500,7 +500,7 @@ const App: React.FC = () => {
        <div className="absolute inset-0 bg-black/10 pointer-events-none z-0"></div>
 
       {/* Header */}
-      <div className="flex items-center justify-between p-3 sm:p-4 glass-panel z-20 border-b border-white/5 relative flex-shrink-0">
+      <div className="flex items-center justify-between p-2 sm:p-4 glass-panel z-20 border-b border-white/5 relative flex-shrink-0">
         <div className="flex items-center gap-3">
            <button 
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition backdrop-blur-md" 
@@ -508,15 +508,15 @@ const App: React.FC = () => {
             >
               <Home size={20} className="text-white" />
            </button>
-           <h1 className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-purple-400 text-lg hidden sm:block">
+           <h1 className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-purple-400 text-base sm:text-lg hidden sm:block">
                LUDO MASTER
            </h1>
         </div>
-        <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-yellow-300 font-bold bg-black/40 border border-yellow-500/20 px-4 py-1.5 rounded-full shadow-inner">
-                <Coins size={16} fill="gold"/> {balance}
+        <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1 sm:gap-2 text-yellow-300 font-bold bg-black/40 border border-yellow-500/20 px-3 py-1 sm:px-4 sm:py-1.5 rounded-full shadow-inner text-sm sm:text-base">
+                <Coins size={14} className="sm:w-4 sm:h-4" fill="gold"/> {balance}
             </div>
-            <div className="bg-white/5 px-4 py-1.5 rounded-full text-sm font-mono text-indigo-200 hidden sm:block border border-white/10">
+            <div className="bg-white/5 px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-xs sm:text-sm font-mono text-indigo-200 hidden sm:block border border-white/10">
                 Room: <span className="text-white font-bold">{gameState.roomCode}</span>
             </div>
             <button 
@@ -533,38 +533,35 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative z-10">
         
         {/* Left: Players & Chat (Order 3 on Mobile, Order 1 on Desktop) */}
-        <div className="order-3 md:order-1 w-full md:w-80 glass-panel border-r border-white/5 flex flex-col gap-4 p-4 min-h-[200px] flex-shrink-0 md:flex-shrink md:h-full md:overflow-y-auto">
-           <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2 sticky top-0 bg-transparent">Players</h3>
-           {gameState.players.map((p, i) => (
-             <div key={p.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden ${gameState.currentTurnIndex === i ? 'bg-gradient-to-r from-indigo-600/30 to-purple-600/30 border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-black/20 border-white/5 opacity-70'}`}>
-                {gameState.currentTurnIndex === i && <div className="absolute left-0 top-0 bottom-0 w-1 bg-purple-400"></div>}
-                <div className={`w-12 h-12 rounded-full p-0.5 bg-gradient-to-br ${p.hasWon ? 'from-yellow-400 to-yellow-600' : 'from-slate-500 to-slate-700'}`}>
-                   <img src={p.avatarUrl} alt="av" className="w-full h-full rounded-full object-cover bg-slate-900" />
-                </div>
-                <div className="flex-1">
-                    <p className={`font-bold text-sm ${gameState.currentTurnIndex === i ? 'text-white' : 'text-slate-300'}`}>
-                        {p.name}
-                    </p>
-                    {p.hasWon ? (
-                        <span className="text-xs text-yellow-400 flex items-center gap-1 font-bold"><Trophy size={12}/> Rank #{p.rank}</span>
-                    ) : (
-                       <span className={`text-[10px] ${p.color === 'RED' ? 'text-red-400' : p.color === 'GREEN' ? 'text-green-400' : p.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-400'}`}>
-                           {p.color} TEAM
-                       </span>
-                    )}
-                </div>
-                {gameState.currentTurnIndex === i && (
-                    <div className="animate-pulse">
-                        <div className="w-3 h-3 bg-purple-500 rounded-full shadow-[0_0_10px_#a855f7]"></div>
+        <div className="order-3 md:order-1 w-full md:w-80 glass-panel border-r border-white/5 flex flex-col gap-3 p-3 sm:p-4 min-h-[160px] flex-shrink-0 md:flex-shrink md:h-full md:overflow-y-auto">
+           <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-1 sticky top-0 bg-transparent">Players</h3>
+           <div className="grid grid-cols-2 md:grid-cols-1 gap-2 md:gap-4">
+               {gameState.players.map((p, i) => (
+                 <div key={p.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden ${gameState.currentTurnIndex === i ? 'bg-gradient-to-r from-indigo-600/30 to-purple-600/30 border-purple-400/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-black/20 border-white/5 opacity-70'}`}>
+                    {gameState.currentTurnIndex === i && <div className="absolute left-0 top-0 bottom-0 w-1 bg-purple-400"></div>}
+                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full p-0.5 bg-gradient-to-br ${p.hasWon ? 'from-yellow-400 to-yellow-600' : 'from-slate-500 to-slate-700'}`}>
+                       <img src={p.avatarUrl} alt="av" className="w-full h-full rounded-full object-cover bg-slate-900" />
                     </div>
-                )}
-             </div>
-           ))}
+                    <div className="flex-1 min-w-0">
+                        <p className={`font-bold text-xs sm:text-sm truncate ${gameState.currentTurnIndex === i ? 'text-white' : 'text-slate-300'}`}>
+                            {p.name}
+                        </p>
+                        {p.hasWon ? (
+                            <span className="text-[10px] text-yellow-400 flex items-center gap-1 font-bold"><Trophy size={10}/> #{p.rank}</span>
+                        ) : (
+                           <span className={`text-[10px] truncate block ${p.color === 'RED' ? 'text-red-400' : p.color === 'GREEN' ? 'text-green-400' : p.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-400'}`}>
+                               {p.color}
+                           </span>
+                        )}
+                    </div>
+                 </div>
+               ))}
+           </div>
 
            {/* Game Log */}
-           <div className="flex-1 mt-auto min-h-[100px]">
-                <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">Game Logs</h3>
-                <div className="bg-black/30 rounded-xl p-3 h-48 md:h-auto overflow-y-auto text-xs font-mono space-y-2 border border-white/5 shadow-inner">
+           <div className="flex-1 mt-4 md:mt-auto min-h-[80px]">
+                <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">Logs</h3>
+                <div className="bg-black/30 rounded-xl p-3 h-32 md:h-auto overflow-y-auto text-xs font-mono space-y-2 border border-white/5 shadow-inner">
                     {gameState.logs.slice().reverse().map((log, i) => (
                         <div key={i} className="text-slate-300 border-l-2 border-slate-700 pl-2 py-0.5">{log}</div>
                     ))}
@@ -604,16 +601,16 @@ const App: React.FC = () => {
         </div>
 
         {/* Right: Controls (Order 2 on Mobile, Order 3 on Desktop) */}
-        <div className="order-2 md:order-3 w-full md:w-72 glass-panel border-l border-white/5 p-4 md:p-6 flex flex-row md:flex-col items-center justify-between md:justify-center gap-6 z-20 flex-shrink-0">
-             <div className="text-center w-full">
-                <p className="text-indigo-300 text-[10px] uppercase tracking-[0.2em] mb-2 font-bold">Current Turn</p>
-                <h2 className={`text-2xl font-black drop-shadow-md tracking-wider ${currentPlayer.color === 'RED' ? 'text-red-500' : currentPlayer.color === 'GREEN' ? 'text-green-400' : currentPlayer.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-400'}`}>
+        <div className="order-2 md:order-3 w-full md:w-72 glass-panel border-l border-white/5 p-4 md:p-6 flex flex-row md:flex-col items-center justify-between md:justify-center gap-4 md:gap-6 z-20 flex-shrink-0">
+             <div className="text-left md:text-center w-full">
+                <p className="text-indigo-300 text-[10px] uppercase tracking-[0.2em] mb-1 font-bold">Current Turn</p>
+                <h2 className={`text-lg sm:text-2xl font-black drop-shadow-md tracking-wider truncate ${currentPlayer.color === 'RED' ? 'text-red-500' : currentPlayer.color === 'GREEN' ? 'text-green-400' : currentPlayer.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-400'}`}>
                     {currentPlayer.name}
                 </h2>
-                <div className={`h-1 w-20 mx-auto mt-2 rounded-full ${currentPlayer.color === 'RED' ? 'bg-red-500' : currentPlayer.color === 'GREEN' ? 'bg-green-500' : currentPlayer.color === 'YELLOW' ? 'bg-yellow-400' : 'bg-blue-400'} shadow-[0_0_10px_currentColor]`}></div>
+                <div className={`h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full ${currentPlayer.color === 'RED' ? 'bg-red-500' : currentPlayer.color === 'GREEN' ? 'bg-green-500' : currentPlayer.color === 'YELLOW' ? 'bg-yellow-400' : 'bg-blue-400'} shadow-[0_0_10px_currentColor]`}></div>
              </div>
 
-             <div className="flex-1 flex items-center justify-center w-full my-4">
+             <div className="flex-1 flex items-center justify-end md:justify-center w-full my-0 md:my-4">
                  <div className="relative">
                     {/* Dice Glow */}
                     <div className={`absolute inset-0 blur-2xl opacity-40 transition-colors duration-500 ${currentPlayer.color === 'RED' ? 'bg-red-500' : currentPlayer.color === 'GREEN' ? 'bg-green-500' : currentPlayer.color === 'YELLOW' ? 'bg-yellow-400' : 'bg-blue-500'}`}></div>

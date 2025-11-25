@@ -33,7 +33,7 @@ const Dice: React.FC<DiceProps> = ({ value, rolling, onRoll, disabled, color, sk
   // Dice dot positions
   const renderDots = (num: number) => {
     const dots = [];
-    const dotBaseClass = `absolute w-3 h-3 rounded-full ${skin.dotClass}`;
+    const dotBaseClass = `absolute w-2 h-2 sm:w-2.5 sm:h-2.5 md:w-3 md:h-3 rounded-full ${skin.dotClass}`;
 
     if ([1, 3, 5].includes(num)) dots.push(<div key="c" className={`${dotBaseClass} top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2`} />);
     if ([2, 3, 4, 5, 6].includes(num)) {
@@ -56,11 +56,11 @@ const Dice: React.FC<DiceProps> = ({ value, rolling, onRoll, disabled, color, sk
       <button 
         onClick={onRoll} 
         disabled={disabled || rolling}
-        className={`w-20 h-20 rounded-xl shadow-[0_10px_0_rgb(0,0,0,0.2)] border-4 relative transition-all active:shadow-none active:translate-y-2 ${rolling ? 'animate-roll' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:-translate-y-1'} ${skin.colorClass}`}
+        className={`w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl shadow-[0_6px_0_rgb(0,0,0,0.2)] sm:shadow-[0_10px_0_rgb(0,0,0,0.2)] border-2 sm:border-4 relative transition-all active:shadow-none active:translate-y-2 ${rolling ? 'animate-roll' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:-translate-y-1'} ${skin.colorClass}`}
       >
         {renderDots(displayValue)}
       </button>
-      <div className={`mt-4 font-bold text-lg ${color} drop-shadow-sm`}>
+      <div className={`mt-2 sm:mt-4 font-bold text-xs sm:text-sm md:text-lg ${color} drop-shadow-sm whitespace-nowrap`}>
         {rolling ? 'Rolling...' : disabled ? 'Wait' : 'TAP TO ROLL'}
       </div>
     </div>

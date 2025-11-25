@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2 } from 'lucide-react';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, UserPlus } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
@@ -21,42 +21,65 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   // Online Simulation State
   const [onlineState, setOnlineState] = useState<'IDLE' | 'SEARCHING' | 'LOBBY'>('IDLE');
   const [onlineMessage, setOnlineMessage] = useState('');
-  const [onlinePlayersCount, setOnlinePlayersCount] = useState(0);
+  
+  // Track specific players in the lobby
+  const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
 
   // Reset online state if switching to other modes manually
   useEffect(() => {
     if (mode !== 'ONLINE') {
         setOnlineState('IDLE');
-        setOnlinePlayersCount(0);
-        if (onlineState === 'IDLE') setRoomCode(''); // Clear code only if not already in flow
+        setLobbyPlayers([]);
+        if (onlineState === 'IDLE') setRoomCode('');
     }
-  }, [mode]);
+  }, [mode, onlineState]);
 
   const handleOnlineAction = (action: 'CREATE' | 'JOIN') => {
       if (action === 'JOIN' && !roomCode) return;
       
       setMode('ONLINE');
       setOnlineState('SEARCHING');
-      setOnlineMessage(action === 'CREATE' ? 'Creating Server...' : 'Connecting to Room...');
+      setOnlineMessage(action === 'CREATE' ? 'Creating Room...' : 'Connecting to Room...');
       
-      // Simulate Network Delay & Logic
+      // Simulate Network Delay
       setTimeout(() => {
           if (action === 'CREATE') {
-             setRoomCode(Math.random().toString(36).substring(2, 8).toUpperCase());
+             const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+             setRoomCode(code);
+             // Creator is Player 1
+             setLobbyPlayers([
+                 { id: 'p1', name: playerName, isBot: false, color: 'RED' }
+             ]);
+          } else {
+             // Joiner is Player 2. Simulate a Host exists.
+             setLobbyPlayers([
+                 { id: 'host', name: 'Host_Player', isBot: false, color: 'RED' },
+                 { id: 'p1', name: playerName, isBot: false, color: 'GREEN' }
+             ]);
           }
           
           setOnlineState('LOBBY');
           setOnlineMessage('Waiting for players...');
-          setOnlinePlayersCount(1); // You are player 1
-          
-          // Simulate Opponents Joining
-          setTimeout(() => { setOnlinePlayersCount(2); setOnlineMessage('Opponent found...'); }, 1200);
-          setTimeout(() => { setOnlinePlayersCount(3); setOnlineMessage('Opponent found...'); }, 2500);
-          setTimeout(() => {
-              setOnlinePlayersCount(4);
-              setOnlineMessage('Lobby Full! Ready to Start.');
-          }, 3800);
-      }, 1500);
+      }, 1000);
+  };
+
+  const addBotToLobby = () => {
+      if (lobbyPlayers.length >= 4) return;
+      const botNames = ["Bot_Alpha", "Bot_Beta", "Bot_Gamma", "Bot_Delta", "Bot_Omega"];
+      const nextId = `bot_${Date.now()}`;
+      // Ensure unique name
+      let nextName = botNames[Math.floor(Math.random() * botNames.length)];
+      while(lobbyPlayers.some(p => p.name === nextName)) {
+           nextName = botNames[Math.floor(Math.random() * botNames.length)] + "_" + Math.floor(Math.random()*10);
+      }
+      
+      setLobbyPlayers(prev => [...prev, { id: nextId, name: nextName, isBot: true }]);
+  };
+
+  const copyRoomCode = () => {
+      navigator.clipboard.writeText(roomCode);
+      setOnlineMessage('Code Copied!');
+      setTimeout(() => setOnlineMessage('Waiting for players...'), 2000);
   };
 
   const handleStart = () => {
@@ -77,16 +100,13 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             { name: 'Blue Player', isBot: false, id: 'p4' },
         ];
     } else if (mode === 'ONLINE') {
-        // Mock Online Opponents
-        const mockNames = ["Sarah_Pro", "Dr.Dice", "LudoKing99", "LuckyStar", "ProGamer", "Guest_882", "Speedy", "DiceMaster"];
-        const getRandName = () => mockNames[Math.floor(Math.random() * mockNames.length)];
-        
-        players = [
-            { name: playerName, isBot: false, id: 'p1' },
-            { name: getRandName(), isBot: true, id: 'net_1' }, // Bot flag true ensures Game Logic moves them automatically
-            { name: getRandName(), isBot: true, id: 'net_2' },
-            { name: getRandName(), isBot: true, id: 'net_3' },
-        ];
+        // Use the lobbyPlayers state
+        // IMPORTANT: In this frontend-only simulation, any player that is NOT the current user
+        // must be treated as a Bot so the game logic moves for them.
+        players = lobbyPlayers.map(p => ({
+            ...p,
+            isBot: p.name !== playerName
+        }));
     }
     onStartGame(mode, players);
   };
@@ -171,7 +191,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                         value={roomCode}
                         onChange={(e) => {
                             setRoomCode(e.target.value.toUpperCase());
-                            setMode('ONLINE'); // Switch mode when typing
+                            setMode('ONLINE'); 
                         }}
                         className="flex-1 bg-black/30 p-3 rounded-xl text-sm border border-white/10 focus:border-blue-500 outline-none transition text-white placeholder:text-slate-600 uppercase font-mono"
                     />
@@ -191,24 +211,61 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                 </div>
             ) : (
                 <div className="flex flex-col items-center justify-center py-2 space-y-3">
+                     {/* Room Code Display */}
                      {roomCode && (
-                         <div className="flex flex-col items-center">
-                             <div className="text-2xl font-mono font-bold text-white tracking-[0.5em] bg-black/30 px-4 py-2 rounded-lg border border-white/10 select-all">{roomCode}</div>
-                             <p className="text-[10px] text-slate-400 mt-1">Share Code</p>
+                         <div className="flex flex-col items-center w-full">
+                             <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs text-slate-400 uppercase tracking-widest">Room Code</span>
+                             </div>
+                             <button 
+                                onClick={copyRoomCode}
+                                className="flex items-center gap-3 text-2xl font-mono font-bold text-white tracking-[0.2em] bg-black/40 px-6 py-3 rounded-xl border border-white/10 hover:bg-black/60 transition group w-full justify-center"
+                             >
+                                 {roomCode}
+                                 <Copy size={16} className="text-slate-500 group-hover:text-white transition" />
+                             </button>
                          </div>
                      )}
                      
-                     <div className="w-full space-y-2 mt-2">
-                        <div className="flex justify-between text-xs text-slate-300 px-1">
-                            <span>Players</span>
-                            <span>{onlinePlayersCount}/4</span>
-                        </div>
-                        <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden">
-                             <div 
-                                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500 ease-out"
-                                style={{ width: `${(onlinePlayersCount / 4) * 100}%` }}
-                             ></div>
-                        </div>
+                     {/* Lobby List */}
+                     <div className="w-full mt-4 space-y-2">
+                         <div className="text-xs text-slate-400 flex justify-between px-1">
+                             <span>Participants ({lobbyPlayers.length}/4)</span>
+                             {lobbyPlayers[0]?.name === playerName && lobbyPlayers.length < 4 && (
+                                 <button onClick={addBotToLobby} className="text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                     <UserPlus size={12}/> Add Bot
+                                 </button>
+                             )}
+                         </div>
+                         
+                         {/* Player Slots */}
+                         <div className="space-y-2">
+                             {lobbyPlayers.map((p, i) => (
+                                 <div key={i} className="flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-white/5">
+                                     <div className="flex items-center gap-3">
+                                         <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${i===0 ? 'from-red-500 to-red-700' : 'from-slate-600 to-slate-800'} flex items-center justify-center font-bold text-xs text-white`}>
+                                             {p.name.charAt(0)}
+                                         </div>
+                                         <span className={`text-sm font-medium ${p.name === playerName ? 'text-white' : 'text-slate-300'}`}>
+                                             {p.name} {p.name === playerName && '(You)'}
+                                         </span>
+                                     </div>
+                                     <span className="text-[10px] bg-black/30 px-2 py-1 rounded-md text-slate-400 border border-white/5">
+                                         {i === 0 ? 'HOST' : p.isBot ? 'BOT' : 'PLAYER'}
+                                     </span>
+                                 </div>
+                             ))}
+                             
+                             {/* Empty Slots */}
+                             {Array.from({ length: 4 - lobbyPlayers.length }).map((_, i) => (
+                                 <div key={`empty-${i}`} className="flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 opacity-50">
+                                     <div className="flex items-center gap-3">
+                                         <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse"></div>
+                                         <span className="text-sm text-slate-500 italic">Waiting for player...</span>
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
                      </div>
                 </div>
             )}
@@ -225,17 +282,17 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
 
         <button 
             onClick={handleStart}
-            disabled={mode === 'ONLINE' && onlinePlayersCount < 2 && onlineState !== 'IDLE'} // Disable if online but not enough players
+            disabled={mode === 'ONLINE' && (lobbyPlayers.length < 2 || onlineState !== 'LOBBY')}
             className={`w-full font-extrabold text-xl py-4 rounded-2xl shadow-xl transform transition active:scale-95 flex items-center justify-center gap-3 relative overflow-hidden group ${
-                mode === 'ONLINE' && onlinePlayersCount < 2 
+                mode === 'ONLINE' && lobbyPlayers.length < 2
                 ? 'bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
                 : 'bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 text-white shadow-red-900/40'
             }`}
         >
             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 blur-md"></div>
-            <Play fill={mode === 'ONLINE' && onlinePlayersCount < 2 ? 'gray' : 'white'} className="relative z-10" /> 
+            <Play fill={mode === 'ONLINE' && lobbyPlayers.length < 2 ? 'gray' : 'white'} className="relative z-10" /> 
             <span className="relative z-10">
-                {mode === 'ONLINE' ? (onlineState === 'IDLE' ? 'Create or Join first' : onlinePlayersCount === 4 ? 'START MATCH' : 'Waiting...') : 'PLAY NOW'}
+                {mode === 'ONLINE' ? (onlineState === 'IDLE' ? 'Create or Join first' : lobbyPlayers.length < 2 ? 'Need 2+ Players' : 'START MATCH') : 'PLAY NOW'}
             </span>
         </button>
       </div>

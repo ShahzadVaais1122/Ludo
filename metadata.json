@@ -1,0 +1,5 @@
+{
+  "name": "Ludo Master Pro",
+  "description": "A fully functional, premium Ludo game featuring local multiplayer, AI opponents, game lobby, and real-time game logic visualization.",
+  "requestFramePermissions": []
+}

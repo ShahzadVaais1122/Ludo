@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, UserPlus } from 'lucide-react';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, UserPlus, Plus } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
@@ -63,17 +63,19 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
       }, 1000);
   };
 
-  const addBotToLobby = () => {
+  const addParticipantToLobby = () => {
       if (lobbyPlayers.length >= 4) return;
-      const botNames = ["Bot_Alpha", "Bot_Beta", "Bot_Gamma", "Bot_Delta", "Bot_Omega"];
-      const nextId = `bot_${Date.now()}`;
+      const botNames = ["Guest_Player", "Alex", "Jordan", "Taylor", "Casey"];
+      const nextId = `guest_${Date.now()}`;
       // Ensure unique name
       let nextName = botNames[Math.floor(Math.random() * botNames.length)];
-      while(lobbyPlayers.some(p => p.name === nextName)) {
-           nextName = botNames[Math.floor(Math.random() * botNames.length)] + "_" + Math.floor(Math.random()*10);
+      if(lobbyPlayers.some(p => p.name === nextName)) {
+           nextName += `_${Math.floor(Math.random()*10)}`;
       }
       
-      setLobbyPlayers(prev => [...prev, { id: nextId, name: nextName, isBot: true }]);
+      // We add them as 'isBot: false' visually so they look like real players
+      // The game logic will convert them to bots or expect manual input depending on implementation
+      setLobbyPlayers(prev => [...prev, { id: nextId, name: nextName, isBot: false }]);
   };
 
   const copyRoomCode = () => {
@@ -112,10 +114,12 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen h-full overflow-y-auto w-full relative p-4 sm:p-6">
+    // Use min-h-screen instead of h-full to allow scrolling on mobile without clipping
+    // justify-center is removed for mobile safety (via py-10) but added back on larger screens if needed
+    <div className="flex flex-col items-center min-h-[100dvh] w-full relative p-4 py-10 sm:p-6 overflow-y-auto">
       
       {/* Background Decor */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none fixed">
           <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-600/20 rounded-full blur-[100px]"></div>
           <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[100px]"></div>
       </div>
@@ -231,10 +235,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                      <div className="w-full mt-4 space-y-2">
                          <div className="text-xs text-slate-400 flex justify-between px-1">
                              <span>Participants ({lobbyPlayers.length}/4)</span>
-                             {lobbyPlayers[0]?.name === playerName && lobbyPlayers.length < 4 && (
-                                 <button onClick={addBotToLobby} className="text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                                     <UserPlus size={12}/> Add Bot
-                                 </button>
+                             {/* Hint for Demo Mode */}
+                             {lobbyPlayers.length < 4 && (
+                                <span className="text-[10px] text-yellow-500/80 italic">Demo Mode: Add players manually</span>
                              )}
                          </div>
                          
@@ -256,14 +259,22 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                  </div>
                              ))}
                              
-                             {/* Empty Slots */}
+                             {/* Empty Slots (Clickable to Add) */}
                              {Array.from({ length: 4 - lobbyPlayers.length }).map((_, i) => (
-                                 <div key={`empty-${i}`} className="flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 opacity-50">
+                                 <button 
+                                     key={`empty-${i}`} 
+                                     onClick={addParticipantToLobby}
+                                     className="w-full flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 hover:bg-white/10 hover:border-white/30 transition group"
+                                 >
                                      <div className="flex items-center gap-3">
-                                         <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse"></div>
-                                         <span className="text-sm text-slate-500 italic">Waiting for player...</span>
+                                         <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-white/20 transition flex items-center justify-center">
+                                             <Plus size={14} className="text-slate-500 group-hover:text-white"/>
+                                         </div>
+                                         <span className="text-sm text-slate-500 italic group-hover:text-slate-300">
+                                            Tap to add participant...
+                                         </span>
                                      </div>
-                                 </div>
+                                 </button>
                              ))}
                          </div>
                      </div>
@@ -292,14 +303,14 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 blur-md"></div>
             <Play fill={mode === 'ONLINE' && lobbyPlayers.length < 2 ? 'gray' : 'white'} className="relative z-10" /> 
             <span className="relative z-10">
-                {mode === 'ONLINE' ? (onlineState === 'IDLE' ? 'Create or Join first' : lobbyPlayers.length < 2 ? 'Need 2+ Players' : 'START MATCH') : 'PLAY NOW'}
+                {mode === 'ONLINE' ? (onlineState === 'IDLE' ? 'Create or Join first' : lobbyPlayers.length < 2 ? 'Add Participants' : 'START MATCH') : 'PLAY NOW'}
             </span>
         </button>
       </div>
 
       {/* Shop Modal */}
       {showShop && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xl flex items-end md:items-center justify-center p-4 animate-[fadeIn_0.2s]">
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xl flex items-end md:items-center justify-center p-4 animate-[fadeIn_0.2s] fixed">
            <div className="bg-[#0f172a] w-full max-w-md rounded-3xl p-6 border border-white/10 max-h-[85vh] overflow-y-auto shadow-2xl relative">
                
                {/* Modal Header */}

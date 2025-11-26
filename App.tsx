@@ -135,9 +135,16 @@ const App: React.FC = () => {
     }
   };
 
-  const initGame = (_mode: string, initialPlayers: any[]) => {
-    // Standard Clockwise Turn Order: Red -> Green -> Yellow -> Blue
-    const colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+  const initGame = (_mode: string, initialPlayers: any[], specificRoomCode?: string) => {
+    // Determine color assignment based on player count
+    // Standard: Red -> Green -> Yellow -> Blue
+    // 2 Players: Red -> Yellow (Opposite sides for better gameplay)
+    let colors: PlayerColor[] = [];
+    if (initialPlayers.length === 2) {
+        colors = [PlayerColor.RED, PlayerColor.YELLOW];
+    } else {
+        colors = [PlayerColor.RED, PlayerColor.GREEN, PlayerColor.YELLOW, PlayerColor.BLUE];
+    }
     
     const players: Player[] = initialPlayers.map((p, idx) => ({
       id: p.id,
@@ -154,7 +161,7 @@ const App: React.FC = () => {
 
     setGameState({
       status: GameStatus.PLAYING,
-      roomCode: Math.random().toString(36).substring(7).toUpperCase(),
+      roomCode: specificRoomCode || Math.random().toString(36).substring(7).toUpperCase(),
       players,
       currentTurnIndex: 0,
       diceValue: 1,
@@ -385,15 +392,19 @@ const App: React.FC = () => {
   const nextTurn = () => {
     setGameState(prev => {
         // Check Game Over
-        if (prev.winners.length >= 3) {
+        // Rule: Game Over when "Total Players - 1" have finished.
+        // e.g. 4 players -> 3 winners = game over. 2 players -> 1 winner = game over.
+        const totalPlayers = prev.players.length;
+        if (prev.winners.length >= totalPlayers - 1) {
             return { ...prev, status: GameStatus.FINISHED };
         }
 
         // Find next non-winning player
-        let nextIndex = (prev.currentTurnIndex + 1) % 4;
-        while (prev.players[nextIndex].hasWon) {
-           nextIndex = (nextIndex + 1) % 4;
-           if (nextIndex === prev.currentTurnIndex) break; 
+        let nextIndex = (prev.currentTurnIndex + 1) % totalPlayers;
+        let loopCount = 0;
+        while (prev.players[nextIndex].hasWon && loopCount < totalPlayers) {
+           nextIndex = (nextIndex + 1) % totalPlayers;
+           loopCount++;
         }
 
         return {

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, UserPlus, Plus } from 'lucide-react';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, Plus } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
-  onStartGame: (mode: 'LOCAL' | 'AI' | 'ONLINE', players: any[]) => void;
+  onStartGame: (mode: 'LOCAL' | 'AI' | 'ONLINE', players: any[], roomCode?: string) => void;
   balance: number;
   ownedSkins: string[];
   selectedSkin: string;
@@ -60,7 +60,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
           
           setOnlineState('LOBBY');
           setOnlineMessage('Waiting for players...');
-      }, 1000);
+      }, 1500); // Slightly longer delay to make the loading state noticeable
   };
 
   const addParticipantToLobby = () => {
@@ -110,12 +110,12 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             isBot: p.name !== playerName
         }));
     }
-    onStartGame(mode, players);
+    // Pass the roomCode to the game initializer
+    onStartGame(mode, players, roomCode);
   };
 
   return (
     // Use min-h-screen instead of h-full to allow scrolling on mobile without clipping
-    // justify-center is removed for mobile safety (via py-10) but added back on larger screens if needed
     <div className="flex flex-col items-center min-h-[100dvh] w-full relative p-4 py-10 sm:p-6 overflow-y-auto">
       
       {/* Background Decor */}
@@ -177,8 +177,8 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         </div>
 
         {/* Online Section */}
-        <div className={`glass-card p-4 rounded-2xl mb-6 border transition-all duration-300 ${mode === 'ONLINE' ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-white/10 border-dashed hover:border-white/20'}`}>
-            <div className="flex items-center justify-between mb-4">
+        <div className={`glass-card p-4 rounded-2xl mb-6 border transition-all duration-300 min-h-[160px] flex flex-col justify-center ${mode === 'ONLINE' ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-white/10 border-dashed hover:border-white/20'}`}>
+            <div className="flex items-center justify-between mb-4 w-full">
                 <span className={`font-bold flex items-center gap-2 ${mode === 'ONLINE' ? 'text-blue-300' : 'text-slate-400'}`}>
                     {onlineState === 'SEARCHING' || onlineState === 'LOBBY' ? <Loader2 className="animate-spin" size={16}/> : <Globe size={16}/>} 
                     Online Match
@@ -187,8 +187,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                 {onlineState !== 'IDLE' && <span className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded-full animate-pulse flex items-center gap-1">{onlineMessage}</span>}
             </div>
             
-            {onlineState === 'IDLE' ? (
-                <div className="flex gap-2">
+            {/* CONTENT AREA */}
+            {onlineState === 'IDLE' && (
+                <div className="flex gap-2 w-full animate-fadeIn">
                     <input 
                         type="text" 
                         placeholder="Enter Code" 
@@ -197,24 +198,33 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                             setRoomCode(e.target.value.toUpperCase());
                             setMode('ONLINE'); 
                         }}
-                        className="flex-1 bg-black/30 p-3 rounded-xl text-sm border border-white/10 focus:border-blue-500 outline-none transition text-white placeholder:text-slate-600 uppercase font-mono"
+                        className="flex-1 bg-black/30 p-3 rounded-xl text-sm border border-white/10 focus:border-blue-500 outline-none transition text-white placeholder:text-slate-600 uppercase font-mono w-0"
                     />
                     <button 
                         onClick={() => handleOnlineAction('JOIN')}
                         disabled={!roomCode}
-                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-blue-900/20"
+                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-blue-900/20 whitespace-nowrap"
                     >
                         Join
                     </button>
                     <button 
                          onClick={() => handleOnlineAction('CREATE')}
-                         className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-purple-900/20"
+                         className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-purple-900/20 whitespace-nowrap"
                     >
                         Create
                     </button>
                 </div>
-            ) : (
-                <div className="flex flex-col items-center justify-center py-2 space-y-3">
+            )}
+
+            {onlineState === 'SEARCHING' && (
+                <div className="flex flex-col items-center justify-center py-4 space-y-3 animate-fadeIn w-full text-center">
+                    <Loader2 className="animate-spin text-blue-400" size={32} />
+                    <p className="text-sm text-slate-300">Establishing secure connection...</p>
+                </div>
+            )}
+
+            {onlineState === 'LOBBY' && (
+                <div className="flex flex-col items-center justify-center py-2 space-y-3 animate-fadeIn w-full">
                      {/* Room Code Display */}
                      {roomCode && (
                          <div className="flex flex-col items-center w-full">

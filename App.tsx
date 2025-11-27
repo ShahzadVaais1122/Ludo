@@ -41,6 +41,45 @@ const App: React.FC = () => {
     consecutiveSixes: 0
   });
 
+  // Online Synchronization Logic
+  const broadcastGameAction = (actionType: string, payload: any) => {
+      if (gameState.mode !== 'ONLINE' || !gameState.roomCode) return;
+      const key = `ludo_action_${gameState.roomCode}`;
+      const action = { type: actionType, ...payload, timestamp: Date.now() };
+      localStorage.setItem(key, JSON.stringify(action));
+  };
+
+  useEffect(() => {
+    if (gameState.mode !== 'ONLINE' || !gameState.roomCode) return;
+
+    const handleStorageEvent = (e: StorageEvent) => {
+        if (e.key === `ludo_action_${gameState.roomCode}` && e.newValue) {
+            try {
+                const action = JSON.parse(e.newValue);
+                // Simple timestamp check to avoid re-processing old events if needed, 
+                // but local storage events only fire on change, so usually fine.
+                
+                if (action.type === 'ROLL_START') {
+                    setGameState(prev => ({ ...prev, isDiceRolling: true }));
+                    playSound('roll');
+                } else if (action.type === 'ROLL_DONE') {
+                    // Force the roll value from remote
+                    applyRollResult(action.value);
+                } else if (action.type === 'MOVE') {
+                    // Force the move from remote
+                    applyMoveResult(action.pieceId);
+                }
+            } catch (err) {
+                console.error("Sync Error", err);
+            }
+        }
+    };
+
+    window.addEventListener('storage', handleStorageEvent);
+    return () => window.removeEventListener('storage', handleStorageEvent);
+  }, [gameState.mode, gameState.roomCode]);
+
+
   // Shop Handlers
   const handleBuySkin = (skinId: string, price: number) => {
     if (balance >= price && !ownedSkins.includes(skinId)) {
@@ -135,7 +174,7 @@ const App: React.FC = () => {
     }
   };
 
-  const initGame = (_mode: string, initialPlayers: any[], specificRoomCode?: string) => {
+  const initGame = (mode: string, initialPlayers: any[], specificRoomCode?: string, myId?: string) => {
     // Determine color assignment based on player count
     // Standard: Red -> Green -> Yellow -> Blue
     // 2 Players: Red -> Yellow (Opposite sides for better gameplay)
@@ -171,7 +210,9 @@ const App: React.FC = () => {
       logs: ['Game Started! Red to roll.'],
       waitingForMove: false,
       validMoves: [],
-      consecutiveSixes: 0
+      consecutiveSixes: 0,
+      mode: mode as any,
+      myId: myId
     });
   };
 
@@ -181,6 +222,10 @@ const App: React.FC = () => {
     
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     
+    // Only run Bot logic if we are NOT online (Online uses remote players) or if I am the host managing bots (advanced, but for now disable bots in online)
+    // Actually, in Online mode, all other players are "Real" (Remote). We don't run bot logic.
+    if (gameState.mode === 'ONLINE') return;
+
     // Bot Roll
     if (currentPlayer.isBot && gameState.canRoll && !gameState.isDiceRolling) {
       setTimeout(() => handleRollDice(), 1000);
@@ -204,14 +249,38 @@ const App: React.FC = () => {
 
 
   const handleRollDice = () => {
+    // 1. Permission Check
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    const isOnline = gameState.mode === 'ONLINE';
+    const isMyTurn = !isOnline || currentPlayer.id === gameState.myId;
+
+    // Prevent rolling if not your turn in Online mode
+    if (!isMyTurn) return;
+
     if (!gameState.canRoll || gameState.isDiceRolling) return;
 
+    // 2. Start Visuals
     setGameState(prev => ({ ...prev, isDiceRolling: true, canRoll: false }));
     playSound('roll');
+    
+    // Broadcast start to remote
+    if (isOnline) broadcastGameAction('ROLL_START', {});
 
+    // 3. Logic & State Update (Delayed)
     setTimeout(() => {
       const rolledValue = Math.floor(Math.random() * 6) + 1; // 1-6
       
+      if (isOnline) {
+          // Broadcast result so remote knows what to display
+          broadcastGameAction('ROLL_DONE', { value: rolledValue });
+      }
+
+      applyRollResult(rolledValue);
+    }, 800);
+  };
+
+  // Separated logic so it can be called by Remote Events
+  const applyRollResult = (rolledValue: number) => {
       setGameState(prev => {
         const currentPlayer = prev.players[prev.currentTurnIndex];
         let logs = [...prev.logs, `${currentPlayer.name} rolled a ${rolledValue}`];
@@ -227,14 +296,6 @@ const App: React.FC = () => {
 
         if (newConsecutiveSixes === 3) {
             logs.push(`${currentPlayer.name} rolled three 6s! Turn forfeited.`);
-            // Turn ends, next player
-            // We return state here, and the useEffect auto-passer won't trigger because we set diceRolling false but NOT canRoll/waiting
-            // Actually, we should trigger nextTurn manually or via state
-            // Let's set waitingForMove false, canRoll false.
-            // But we need to ensure nextTurn is called. 
-            // The cleanest way is to set state and let the auto-pass effect handle it, 
-            // OR simply return a state that looks like "Done" and let the effect pick it up.
-            
             return {
                 ...prev,
                 diceValue: rolledValue,
@@ -243,7 +304,7 @@ const App: React.FC = () => {
                 canRoll: false,
                 validMoves: [],
                 logs,
-                consecutiveSixes: 0 // Reset for next person or next turn
+                consecutiveSixes: 0 
             };
         }
 
@@ -259,11 +320,6 @@ const App: React.FC = () => {
         
         if (!canMove) {
           logs.push(`No valid moves for ${currentPlayer.name}.`);
-          // If 6 (and not 3rd), they get to roll again, otherwise turn ends
-          // Note: If they rolled 6 but couldn't move (e.g. all blocked), they still get extra roll?
-          // Standard rules: "Rolling a six also earns the player an extra roll."
-          // Usually yes, unless 3rd 6.
-          
           return {
             ...prev,
             diceValue: rolledValue,
@@ -287,13 +343,10 @@ const App: React.FC = () => {
           consecutiveSixes: newConsecutiveSixes
         };
       });
-      
-    }, 800);
-  };
+  }
 
   // Effect to handle auto-pass turn if no moves (and not a 6 or forfeited)
   useEffect(() => {
-    // Only pass turn if: Not rolling, Not waiting for user to move, Can't roll again (not extra turn), and Playing
     if (!gameState.isDiceRolling && !gameState.canRoll && !gameState.waitingForMove && gameState.status === GameStatus.PLAYING) {
        const timer = setTimeout(nextTurn, 1000);
        return () => clearTimeout(timer);
@@ -303,16 +356,33 @@ const App: React.FC = () => {
 
 
   const handlePieceClick = (pieceId: number) => {
+     // 1. Permission Check
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    const isOnline = gameState.mode === 'ONLINE';
+    const isMyTurn = !isOnline || currentPlayer.id === gameState.myId;
+
+    if (!isMyTurn) return;
+
     if (!gameState.waitingForMove) return;
     
-    setGameState(prev => {
-      if (!prev.validMoves.includes(pieceId)) return prev;
+    // Broadcast move
+    if (isOnline) broadcastGameAction('MOVE', { pieceId });
 
+    applyMoveResult(pieceId);
+  };
+
+  const applyMoveResult = (pieceId: number) => {
+    setGameState(prev => {
+      // NOTE: For remote moves, we might strictly check validMoves again, but they should be synced.
+      // But we accept it to ensure state doesn't desync.
       const currentPlayerIndex = prev.currentTurnIndex;
       const currentPlayer = prev.players[currentPlayerIndex];
       const newPlayers = [...prev.players];
       const playerToUpdate = { ...newPlayers[currentPlayerIndex] };
-      const pieceToUpdate = playerToUpdate.pieces.find(p => p.id === pieceId)!;
+      
+      // Find piece - check safety
+      const pieceToUpdate = playerToUpdate.pieces.find(p => p.id === pieceId);
+      if (!pieceToUpdate) return prev; // Error check
 
       // Logic: Move piece
       let moveDistance = prev.diceValue;
@@ -348,16 +418,14 @@ const App: React.FC = () => {
       // 5. Check Win Condition
       let pieceFinished = false;
       if (pieceToUpdate.position === 99 || pieceToUpdate.position === 56) {
-          // Note: gameLogic checks <= 56. If it was exactly 56, we move it to 99 (HOME STATE)
           if (pieceToUpdate.position === 56) pieceToUpdate.position = 99;
           
           pieceFinished = true;
           playSound('win');
           newLogs.push(`${currentPlayer.name}'s piece reached Home!`);
-          if (!currentPlayer.isBot) setBalance(b => b + 500); // Win Reward
+          if (!currentPlayer.isBot) setBalance(b => b + 500); 
       }
       
-      // Check if player has won (all 4 pieces at 99)
       const allHome = playerToUpdate.pieces.every(p => p.position === 99);
       let winners = [...prev.winners];
       
@@ -366,16 +434,10 @@ const App: React.FC = () => {
           playerToUpdate.rank = winners.length + 1;
           winners.push(playerToUpdate.color);
           newLogs.push(`🏆 ${currentPlayer.name} HAS FINISHED Rank #${playerToUpdate.rank}!`);
-          if (!currentPlayer.isBot) setBalance(b => b + 2000); // Grand Win Reward
+          if (!currentPlayer.isBot) setBalance(b => b + 2000); 
       }
 
-      // 6. Turn Logic: 
-      // Extra turn if: Rolled 6 OR Killed Opponent OR Piece Finished (but game not over for player)
-      // NOTE: 3x 6s check happens at ROLL time. Here we just grant the extra roll if it was a 6.
       const extraTurn = (prev.diceValue === 6) || killed || (pieceFinished && !allHome);
-      
-      // If extra turn, keep consecutiveSixes. If turn ends (no extra), reset it (handled by nextTurn logic usually, but here we transition to next player via useEffect if !canRoll)
-      // Actually, we reset consecutiveSixes only when turn passes to NEXT player.
       
       return {
         ...prev,
@@ -384,22 +446,18 @@ const App: React.FC = () => {
         canRoll: extraTurn, 
         winners,
         logs: newLogs,
-        validMoves: [] // Clear moves
+        validMoves: [] 
       };
     });
-  };
+  }
 
   const nextTurn = () => {
     setGameState(prev => {
-        // Check Game Over
-        // Rule: Game Over when "Total Players - 1" have finished.
-        // e.g. 4 players -> 3 winners = game over. 2 players -> 1 winner = game over.
         const totalPlayers = prev.players.length;
         if (prev.winners.length >= totalPlayers - 1) {
             return { ...prev, status: GameStatus.FINISHED };
         }
 
-        // Find next non-winning player
         let nextIndex = (prev.currentTurnIndex + 1) % totalPlayers;
         let loopCount = 0;
         while (prev.players[nextIndex].hasWon && loopCount < totalPlayers) {
@@ -413,7 +471,7 @@ const App: React.FC = () => {
             canRoll: true,
             waitingForMove: false,
             diceValue: 1,
-            consecutiveSixes: 0 // Reset for new player
+            consecutiveSixes: 0 
         };
     });
   };
@@ -555,7 +613,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                         <p className={`font-bold text-xs sm:text-sm truncate ${gameState.currentTurnIndex === i ? 'text-white' : 'text-slate-300'}`}>
-                            {p.name}
+                            {p.name} {gameState.mode === 'ONLINE' && p.id === gameState.myId && '(You)'}
                         </p>
                         {p.hasWon ? (
                             <span className="text-[10px] text-yellow-400 flex items-center gap-1 font-bold"><Trophy size={10}/> #{p.rank}</span>
@@ -629,7 +687,7 @@ const App: React.FC = () => {
                         value={gameState.diceValue} 
                         rolling={gameState.isDiceRolling} 
                         onRoll={handleRollDice}
-                        disabled={!gameState.canRoll || (currentPlayer.isBot && gameState.status === GameStatus.PLAYING)}
+                        disabled={!gameState.canRoll || (currentPlayer.isBot && gameState.status === GameStatus.PLAYING) || (gameState.mode === 'ONLINE' && currentPlayer.id !== gameState.myId)}
                         color={currentPlayer.color === 'RED' ? 'text-red-500' : currentPlayer.color === 'GREEN' ? 'text-green-500' : currentPlayer.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-500'}
                         skinData={currentSkinData}
                     />

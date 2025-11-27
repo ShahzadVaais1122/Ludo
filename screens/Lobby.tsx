@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, Plus } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
-  onStartGame: (mode: 'LOCAL' | 'AI' | 'ONLINE', players: any[], roomCode?: string) => void;
+  onStartGame: (mode: 'LOCAL' | 'AI' | 'ONLINE', players: any[], roomCode?: string, myId?: string) => void;
   balance: number;
   ownedSkins: string[];
   selectedSkin: string;
@@ -17,6 +17,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   const [roomCode, setRoomCode] = useState('');
   const [mode, setMode] = useState<'LOCAL' | 'ONLINE' | 'AI'>('AI');
   const [showShop, setShowShop] = useState(false);
+  
+  // New State for Player Count selection (for AI/Local)
+  const [playerCount, setPlayerCount] = useState<2 | 3 | 4>(4);
 
   // Online Simulation State
   const [onlineState, setOnlineState] = useState<'IDLE' | 'SEARCHING' | 'LOBBY'>('IDLE');
@@ -24,6 +27,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   
   // Track specific players in the lobby
   const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
+  
+  // Track my own ID in the lobby
+  const [myId, setMyId] = useState<string>('');
 
   // Sync with LocalStorage for Local Multiplayer Simulation across tabs
   useEffect(() => {
@@ -33,7 +39,6 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             const parsed = JSON.parse(storedRoom);
             if (parsed.code === roomCode) {
                  // Update players if code matches
-                 // Merge existing with new, avoiding duplicates based on ID
                  setLobbyPlayers(parsed.players);
             }
         }
@@ -74,8 +79,12 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
           if (action === 'CREATE') {
              const code = Math.random().toString(36).substring(2, 8).toUpperCase();
              setRoomCode(code);
+             
              // Creator is Player 1
-             const initialPlayers = [{ id: 'p1', name: playerName, isBot: false, color: 'RED' }];
+             const creatorId = 'p1';
+             setMyId(creatorId);
+             
+             const initialPlayers = [{ id: creatorId, name: playerName, isBot: false, color: 'RED' }];
              setLobbyPlayers(initialPlayers);
              
              // Initial Sync
@@ -99,12 +108,14 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              }
              
              // Add Self
-             const myId = `p_${Date.now()}`;
+             const joinerId = `p_${Date.now()}`;
+             setMyId(joinerId);
+             
              // Assign next color based on count
              const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
              const nextColor = colorMap[currentPlayers.length % 4];
              
-             const newPlayer = { id: myId, name: playerName, isBot: false, color: nextColor };
+             const newPlayer = { id: joinerId, name: playerName, isBot: false, color: nextColor };
              const updatedPlayers = [...currentPlayers, newPlayer];
              
              setLobbyPlayers(updatedPlayers);
@@ -140,32 +151,51 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
 
   const handleStart = () => {
     let players: any[] = [];
+    let startMyId = myId;
+    
     if (mode === 'AI') {
-        // Red (P1) -> Green (Bot) -> Yellow (Bot) -> Blue (Bot)
-        players = [
-            { name: playerName, isBot: false, id: 'p1' },
-            { name: 'Bot Green', isBot: true, id: 'bot1' },
-            { name: 'Bot Yellow', isBot: true, id: 'bot2' },
-            { name: 'Bot Blue', isBot: true, id: 'bot3' },
-        ];
+        // Construct player list based on selected count
+        // Player 1 is always the user (Red)
+        startMyId = 'p1';
+        players.push({ name: playerName, isBot: false, id: 'p1' });
+        
+        if (playerCount === 2) {
+            // 2 Players: Red vs Yellow
+            players.push({ name: 'Bot Yellow', isBot: true, id: 'bot1' });
+        } else {
+            // 3 Players: Red, Green, Yellow
+            // 4 Players: Red, Green, Yellow, Blue
+            players.push({ name: 'Bot Green', isBot: true, id: 'bot1' });
+            players.push({ name: 'Bot Yellow', isBot: true, id: 'bot2' });
+            if (playerCount === 4) {
+                players.push({ name: 'Bot Blue', isBot: true, id: 'bot3' });
+            }
+        }
     } else if (mode === 'LOCAL') {
-        players = [
-            { name: 'Red Player', isBot: false, id: 'p1' },
-            { name: 'Green Player', isBot: false, id: 'p2' },
-            { name: 'Yellow Player', isBot: false, id: 'p3' },
-            { name: 'Blue Player', isBot: false, id: 'p4' },
-        ];
+        // Construct local players based on count
+        startMyId = 'p1'; // In local, we essentially act as P1, but really we control everyone.
+        players.push({ name: 'Player 1', isBot: false, id: 'p1' });
+        players.push({ name: 'Player 2', isBot: false, id: 'p2' });
+        
+        if (playerCount >= 3) {
+            players.push({ name: 'Player 3', isBot: false, id: 'p3' });
+        }
+        if (playerCount === 4) {
+            players.push({ name: 'Player 4', isBot: false, id: 'p4' });
+        }
     } else if (mode === 'ONLINE') {
         // Use the lobbyPlayers state
-        // IMPORTANT: In this frontend-only simulation, any player that is NOT the current user
-        // must be treated as a Bot so the game logic moves for them.
+        // IMPORTANT: In this frontend-only simulation, any player that is NOT the current user (myId)
+        // must be treated as a "Remote" player. We flag them as `isBot: false` generally,
+        // but App.tsx logic will prevent us from moving them if it's not our turn.
+        // We do NOT set `isBot: true` because that triggers the AI logic locally.
         players = lobbyPlayers.map(p => ({
             ...p,
-            isBot: p.name !== playerName
+            isBot: false // Online players are real, just remote
         }));
     }
-    // Pass the roomCode to the game initializer
-    onStartGame(mode, players, roomCode);
+    // Pass the roomCode and myId to the game initializer
+    onStartGame(mode, players, roomCode, startMyId);
   };
 
   return (
@@ -229,6 +259,24 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                 {mode === 'LOCAL' && <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/20 to-transparent"></div>}
             </button>
         </div>
+
+        {/* Player Count Selection (Visible for AI & LOCAL) */}
+        {(mode === 'AI' || mode === 'LOCAL') && (
+            <div className="mb-6 animate-fadeIn">
+                <label className="text-xs font-bold text-indigo-300 ml-2 uppercase tracking-wide">Number of Players</label>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                    {[2, 3, 4].map((count) => (
+                        <button
+                            key={count}
+                            onClick={() => setPlayerCount(count as 2|3|4)}
+                            className={`p-3 rounded-xl font-bold text-sm transition border ${playerCount === count ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/30' : 'bg-black/20 border-white/5 text-slate-400 hover:bg-white/10'}`}
+                        >
+                            {count} Players
+                        </button>
+                    ))}
+                </div>
+            </div>
+        )}
 
         {/* Online Section */}
         <div className={`glass-card p-4 rounded-2xl mb-6 border transition-all duration-300 min-h-[160px] flex flex-col justify-center ${mode === 'ONLINE' ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-white/10 border-dashed hover:border-white/20'}`}>

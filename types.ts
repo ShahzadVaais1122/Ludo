@@ -58,6 +58,10 @@ export interface GameState {
   waitingForMove: boolean; // If true, player must click a piece
   validMoves: number[]; // Piece IDs that can move
   consecutiveSixes: number; // Track consecutive sixes for the 3x rule
+  
+  // Online Sync Fields
+  mode?: 'LOCAL' | 'AI' | 'ONLINE';
+  myId?: string; // The ID of the local player
 }
 
 export interface ChatMessage {

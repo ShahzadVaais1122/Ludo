@@ -33,20 +33,35 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
 
   // Sync with LocalStorage for Local Multiplayer Simulation across tabs
   useEffect(() => {
-    const handleStorageChange = () => {
-        const storedRoom = localStorage.getItem('ludo_online_room');
-        if (storedRoom) {
-            const parsed = JSON.parse(storedRoom);
-            if (parsed.code === roomCode) {
-                 // Update players if code matches
-                 setLobbyPlayers(parsed.players);
+    const handleStorageChange = (e: StorageEvent) => {
+        // 1. Sync Lobby Players
+        if (e.key === 'ludo_online_room') {
+            const storedRoom = e.newValue;
+            if (storedRoom) {
+                const parsed = JSON.parse(storedRoom);
+                if (parsed.code === roomCode) {
+                     // Update players if code matches
+                     setLobbyPlayers(parsed.players);
+                }
+            }
+        }
+        
+        // 2. Listen for GAME START command (For Joiners)
+        if (roomCode && mode === 'ONLINE' && e.key === `ludo_action_${roomCode}`) {
+            if (e.newValue) {
+                const action = JSON.parse(e.newValue);
+                if (action.type === 'GAME_START') {
+                    // Host has started the game!
+                    // action.players contains the definitive list
+                    onStartGame('ONLINE', action.players, roomCode, myId);
+                }
             }
         }
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [roomCode]);
+  }, [roomCode, mode, myId, onStartGame]);
 
   // Update localStorage whenever lobbyPlayers changes (if we are in a room)
   useEffect(() => {
@@ -106,6 +121,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              if (currentPlayers.length === 0) {
                   currentPlayers = [{ id: 'host', name: 'Host_Player', isBot: false, color: 'RED' }];
              }
+             
+             // Check if already joined to avoid dupes on re-join
+             // For simple logic, we just add new
              
              // Add Self
              const joinerId = `p_${Date.now()}`;
@@ -185,16 +203,21 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         }
     } else if (mode === 'ONLINE') {
         // Use the lobbyPlayers state
-        // IMPORTANT: In this frontend-only simulation, any player that is NOT the current user (myId)
-        // must be treated as a "Remote" player. We flag them as `isBot: false` generally,
-        // but App.tsx logic will prevent us from moving them if it's not our turn.
-        // We do NOT set `isBot: true` because that triggers the AI logic locally.
         players = lobbyPlayers.map(p => ({
             ...p,
             isBot: false // Online players are real, just remote
         }));
+        
+        // Broadcast Start Game Signal to Joiners
+        const startAction = {
+            type: 'GAME_START',
+            players: players, // Send exact list so order matches
+            timestamp: Date.now()
+        };
+        localStorage.setItem(`ludo_action_${roomCode}`, JSON.stringify(startAction));
     }
-    // Pass the roomCode and myId to the game initializer
+    
+    // Start locally
     onStartGame(mode, players, roomCode, startMyId);
   };
 

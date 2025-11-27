@@ -194,8 +194,8 @@ const App: React.FC = () => {
       pieces: INITIAL_PIECES(colors[idx]),
       hasWon: false,
       rank: 0,
-      // For local user (usually p1), use selected skin. Bots get random or default.
-      diceSkin: (!p.isBot && idx === 0) ? selectedSkinId : (p.isBot ? ['default', 'gold', 'neon', 'ruby'][Math.floor(Math.random()*4)] : 'default')
+      // CORRECTED: Apply skin to the player that matches myId, or to P1 in Local mode
+      diceSkin: (p.id === myId || (mode === 'LOCAL' && idx === 0)) ? selectedSkinId : (p.isBot ? ['default', 'gold', 'neon', 'ruby'][Math.floor(Math.random()*4)] : 'default')
     }));
 
     setGameState({

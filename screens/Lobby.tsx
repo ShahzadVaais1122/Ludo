@@ -25,6 +25,34 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   // Track specific players in the lobby
   const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
 
+  // Sync with LocalStorage for Local Multiplayer Simulation across tabs
+  useEffect(() => {
+    const handleStorageChange = () => {
+        const storedRoom = localStorage.getItem('ludo_online_room');
+        if (storedRoom) {
+            const parsed = JSON.parse(storedRoom);
+            if (parsed.code === roomCode) {
+                 // Update players if code matches
+                 // Merge existing with new, avoiding duplicates based on ID
+                 setLobbyPlayers(parsed.players);
+            }
+        }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [roomCode]);
+
+  // Update localStorage whenever lobbyPlayers changes (if we are in a room)
+  useEffect(() => {
+      if (roomCode && lobbyPlayers.length > 0) {
+          localStorage.setItem('ludo_online_room', JSON.stringify({
+              code: roomCode,
+              players: lobbyPlayers
+          }));
+      }
+  }, [lobbyPlayers, roomCode]);
+
   // Reset online state if switching to other modes manually
   useEffect(() => {
     if (mode !== 'ONLINE') {
@@ -47,20 +75,47 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              const code = Math.random().toString(36).substring(2, 8).toUpperCase();
              setRoomCode(code);
              // Creator is Player 1
-             setLobbyPlayers([
-                 { id: 'p1', name: playerName, isBot: false, color: 'RED' }
-             ]);
+             const initialPlayers = [{ id: 'p1', name: playerName, isBot: false, color: 'RED' }];
+             setLobbyPlayers(initialPlayers);
+             
+             // Initial Sync
+             localStorage.setItem('ludo_online_room', JSON.stringify({ code, players: initialPlayers }));
+             
           } else {
-             // Joiner is Player 2. Simulate a Host exists.
-             setLobbyPlayers([
-                 { id: 'host', name: 'Host_Player', isBot: false, color: 'RED' },
-                 { id: 'p1', name: playerName, isBot: false, color: 'GREEN' }
-             ]);
+             // Joiner logic (Simulated)
+             const storedRoomStr = localStorage.getItem('ludo_online_room');
+             let currentPlayers = [];
+             
+             if (storedRoomStr) {
+                 const storedRoom = JSON.parse(storedRoomStr);
+                 if (storedRoom.code === roomCode) {
+                     currentPlayers = storedRoom.players;
+                 }
+             }
+
+             // If no local storage room found (clean simulation), mock a host
+             if (currentPlayers.length === 0) {
+                  currentPlayers = [{ id: 'host', name: 'Host_Player', isBot: false, color: 'RED' }];
+             }
+             
+             // Add Self
+             const myId = `p_${Date.now()}`;
+             // Assign next color based on count
+             const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
+             const nextColor = colorMap[currentPlayers.length % 4];
+             
+             const newPlayer = { id: myId, name: playerName, isBot: false, color: nextColor };
+             const updatedPlayers = [...currentPlayers, newPlayer];
+             
+             setLobbyPlayers(updatedPlayers);
+             
+             // Sync back
+             localStorage.setItem('ludo_online_room', JSON.stringify({ code: roomCode, players: updatedPlayers }));
           }
           
           setOnlineState('LOBBY');
           setOnlineMessage('Waiting for players...');
-      }, 1500); // Slightly longer delay to make the loading state noticeable
+      }, 1500);
   };
 
   const addParticipantToLobby = () => {
@@ -73,9 +128,8 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
            nextName += `_${Math.floor(Math.random()*10)}`;
       }
       
-      // We add them as 'isBot: false' visually so they look like real players
-      // The game logic will convert them to bots or expect manual input depending on implementation
-      setLobbyPlayers(prev => [...prev, { id: nextId, name: nextName, isBot: false }]);
+      const updated = [...lobbyPlayers, { id: nextId, name: nextName, isBot: false }];
+      setLobbyPlayers(updated);
   };
 
   const copyRoomCode = () => {
@@ -115,16 +169,16 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   };
 
   return (
-    // Use min-h-screen instead of h-full to allow scrolling on mobile without clipping
-    <div className="flex flex-col items-center min-h-[100dvh] w-full relative p-4 py-10 sm:p-6 overflow-y-auto">
+    // FIX: Changed min-h-[100dvh] to h-[100dvh] and added overflow-y-auto to fix mobile scrolling hang
+    <div className="flex flex-col items-center h-[100dvh] w-full relative p-4 sm:p-6 overflow-y-auto overflow-x-hidden">
       
       {/* Background Decor */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none fixed">
+      <div className="fixed inset-0 overflow-hidden -z-10 pointer-events-none">
           <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-600/20 rounded-full blur-[100px]"></div>
           <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[100px]"></div>
       </div>
 
-      <div className="max-w-md w-full glass-panel rounded-3xl p-5 sm:p-8 shadow-2xl relative animate-[fadeIn_0.5s_ease-out] my-auto">
+      <div className="max-w-md w-full glass-panel rounded-3xl p-5 sm:p-8 shadow-2xl relative animate-[fadeIn_0.5s_ease-out] my-auto flex-shrink-0">
         
         {/* Header with Balance */}
         <div className="flex justify-between items-center mb-6">
@@ -244,11 +298,8 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                      {/* Lobby List */}
                      <div className="w-full mt-4 space-y-2">
                          <div className="text-xs text-slate-400 flex justify-between px-1">
-                             <span>Participants ({lobbyPlayers.length}/4)</span>
-                             {/* Hint for Demo Mode */}
-                             {lobbyPlayers.length < 4 && (
-                                <span className="text-[10px] text-yellow-500/80 italic">Demo Mode: Add players manually</span>
-                             )}
+                             <span className="font-bold text-blue-300">Participants ({lobbyPlayers.length}/4)</span>
+                             {lobbyPlayers.length < 2 && <span className="text-[10px] text-red-400 font-bold uppercase animate-pulse">Min 2 Players</span>}
                          </div>
                          
                          {/* Player Slots */}
@@ -274,14 +325,14 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                  <button 
                                      key={`empty-${i}`} 
                                      onClick={addParticipantToLobby}
-                                     className="w-full flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 hover:bg-white/10 hover:border-white/30 transition group"
+                                     className={`w-full flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 hover:bg-white/10 hover:border-white/30 transition group ${lobbyPlayers.length < 2 && i === 0 ? 'ring-1 ring-yellow-500/50 bg-yellow-500/10' : ''}`}
                                  >
                                      <div className="flex items-center gap-3">
                                          <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-white/20 transition flex items-center justify-center">
                                              <Plus size={14} className="text-slate-500 group-hover:text-white"/>
                                          </div>
-                                         <span className="text-sm text-slate-500 italic group-hover:text-slate-300">
-                                            Tap to add participant...
+                                         <span className={`text-sm italic group-hover:text-slate-300 ${lobbyPlayers.length < 2 && i === 0 ? 'text-yellow-200' : 'text-slate-500'}`}>
+                                            {lobbyPlayers.length < 2 && i === 0 ? 'Add Participant (Required)' : 'Tap to add participant...'}
                                          </span>
                                      </div>
                                  </button>

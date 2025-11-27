@@ -63,9 +63,35 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [roomCode, mode, myId, onStartGame]);
 
+  // POLLING FALLBACK: Ensure UI updates even if Storage Event misses (Mobile/Some Browsers)
+  useEffect(() => {
+    if (mode !== 'ONLINE' || !roomCode || onlineState !== 'LOBBY') return;
+    
+    const interval = setInterval(() => {
+        const storedRoomStr = localStorage.getItem('ludo_online_room');
+        if (storedRoomStr) {
+            const storedRoom = JSON.parse(storedRoomStr);
+            if (storedRoom.code === roomCode) {
+                // Only update if different to avoid render loops
+                setLobbyPlayers(prev => {
+                    if (JSON.stringify(prev) !== JSON.stringify(storedRoom.players)) {
+                        return storedRoom.players;
+                    }
+                    return prev;
+                });
+            }
+        }
+    }, 1000); // Check every second
+
+    return () => clearInterval(interval);
+  }, [mode, roomCode, onlineState]);
+
   // Update localStorage whenever lobbyPlayers changes (if we are in a room)
   useEffect(() => {
       if (roomCode && lobbyPlayers.length > 0) {
+          // Only write if we are part of this room/have updated it
+          // In a real app, only the source of truth or specific actions write.
+          // Here, we just sync latest state.
           localStorage.setItem('ludo_online_room', JSON.stringify({
               code: roomCode,
               players: lobbyPlayers
@@ -220,6 +246,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
     // Start locally
     onStartGame(mode, players, roomCode, startMyId);
   };
+
+  // Determine if I am the Host (First player in list)
+  const isHost = mode === 'ONLINE' && lobbyPlayers.length > 0 && lobbyPlayers[0].id === myId;
 
   return (
     // FIX: Changed min-h-[100dvh] to h-[100dvh] and added overflow-y-auto to fix mobile scrolling hang
@@ -391,7 +420,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                  </div>
                              ))}
                              
-                             {/* Empty Slots (Clickable to Add) */}
+                             {/* Empty Slots (Clickable to Add - Helper for when Sync Fails or Testing) */}
                              {Array.from({ length: 4 - lobbyPlayers.length }).map((_, i) => (
                                  <button 
                                      key={`empty-${i}`} 
@@ -403,7 +432,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                              <Plus size={14} className="text-slate-500 group-hover:text-white"/>
                                          </div>
                                          <span className={`text-sm italic group-hover:text-slate-300 ${lobbyPlayers.length < 2 && i === 0 ? 'text-yellow-200' : 'text-slate-500'}`}>
-                                            {lobbyPlayers.length < 2 && i === 0 ? 'Add Participant (Required)' : 'Tap to add participant...'}
+                                            {lobbyPlayers.length < 2 && i === 0 ? 'Add Participant (Manual)' : 'Tap to add participant...'}
                                          </span>
                                      </div>
                                  </button>
@@ -423,21 +452,31 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             <span>Dice Store</span>
         </button>
 
-        <button 
-            onClick={handleStart}
-            disabled={mode === 'ONLINE' && (lobbyPlayers.length < 2 || onlineState !== 'LOBBY')}
-            className={`w-full font-extrabold text-xl py-4 rounded-2xl shadow-xl transform transition active:scale-95 flex items-center justify-center gap-3 relative overflow-hidden group ${
-                mode === 'ONLINE' && lobbyPlayers.length < 2
-                ? 'bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
-                : 'bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 text-white shadow-red-900/40'
-            }`}
-        >
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 blur-md"></div>
-            <Play fill={mode === 'ONLINE' && lobbyPlayers.length < 2 ? 'gray' : 'white'} className="relative z-10" /> 
-            <span className="relative z-10">
-                {mode === 'ONLINE' ? (onlineState === 'IDLE' ? 'Create or Join first' : lobbyPlayers.length < 2 ? 'Add Participants' : 'START MATCH') : 'PLAY NOW'}
-            </span>
-        </button>
+        {/* Start Game Button Area */}
+        {mode === 'ONLINE' && lobbyPlayers.length >= 2 && !isHost ? (
+            <div className="w-full bg-slate-800 text-slate-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 animate-pulse border border-white/10 shadow-inner">
+                <Loader2 className="animate-spin" /> Waiting for Host to Start...
+            </div>
+        ) : (
+            <button 
+                onClick={handleStart}
+                disabled={mode === 'ONLINE' && (lobbyPlayers.length < 2 || onlineState !== 'LOBBY')}
+                className={`w-full font-extrabold text-xl py-4 rounded-2xl shadow-xl transform transition active:scale-95 flex items-center justify-center gap-3 relative overflow-hidden group ${
+                    mode === 'ONLINE' && lobbyPlayers.length < 2
+                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
+                    : 'bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 text-white shadow-red-900/40'
+                }`}
+            >
+                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 blur-md"></div>
+                <Play fill={mode === 'ONLINE' && lobbyPlayers.length < 2 ? 'gray' : 'white'} className="relative z-10" /> 
+                <span className="relative z-10">
+                    {mode === 'ONLINE' 
+                        ? (onlineState === 'IDLE' ? 'Create or Join first' : lobbyPlayers.length < 2 ? 'Waiting for Players...' : 'START MATCH') 
+                        : 'PLAY NOW'
+                    }
+                </span>
+            </button>
+        )}
       </div>
 
       {/* Shop Modal */}

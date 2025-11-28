@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, Plus } from 'lucide-react';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, Plus, AlertCircle } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
@@ -25,6 +25,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
   // Online State
   const [onlineState, setOnlineState] = useState<'IDLE' | 'SEARCHING' | 'LOBBY'>('IDLE');
   const [onlineMessage, setOnlineMessage] = useState('');
+  const [isError, setIsError] = useState(false);
   const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
 
   // 1. Restore Online State on Mount
@@ -121,10 +122,17 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
 
 
   const handleOnlineAction = (action: 'CREATE' | 'JOIN') => {
-      if (action === 'JOIN' && !roomCode) return;
+      const cleanCode = roomCode.trim().toUpperCase();
+
+      if (action === 'JOIN' && !cleanCode) {
+          setOnlineMessage('Please enter a room code');
+          setIsError(true);
+          return;
+      }
       
       setOnlineState('SEARCHING');
       setOnlineMessage(action === 'CREATE' ? 'Creating Room...' : 'Connecting...');
+      setIsError(false);
       
       setTimeout(() => {
           if (action === 'CREATE') {
@@ -153,19 +161,27 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              
           } else {
              // JOIN Logic
-             const key = `ludo_lobby_${roomCode}`;
+             const key = `ludo_lobby_${cleanCode}`;
              const storedData = localStorage.getItem(key);
              
              if (!storedData) {
                  setOnlineState('IDLE');
-                 alert('Room not found! Please check the code.');
+                 setOnlineMessage('❌ Room not found! Check code.');
+                 setIsError(true);
+                 // Auto-clear error after 3s
+                 setTimeout(() => {
+                     setOnlineMessage('');
+                     setIsError(false);
+                 }, 3000);
                  return;
              }
              
              let currentPlayers = JSON.parse(storedData);
              if (currentPlayers.length >= 4) {
                  setOnlineState('IDLE');
-                 alert('Room is full!');
+                 setOnlineMessage('❌ Room is full!');
+                 setIsError(true);
+                 setTimeout(() => { setOnlineMessage(''); setIsError(false); }, 3000);
                  return;
              }
 
@@ -177,7 +193,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              }
 
              // Persist
-             sessionStorage.setItem('ludo_room_code', roomCode);
+             sessionStorage.setItem('ludo_room_code', cleanCode);
              sessionStorage.setItem('ludo_my_id', joinerId);
              sessionStorage.setItem('ludo_mode', 'ONLINE');
              setMode('ONLINE');
@@ -199,6 +215,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
           
           setOnlineState('LOBBY');
           setOnlineMessage('Waiting for players...');
+          setIsError(false);
       }, 800);
   };
 
@@ -356,19 +373,34 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                     Online Match
                 </span>
                 {onlineState === 'IDLE' && <span className="text-[10px] bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/30">Live Demo</span>}
-                {onlineState !== 'IDLE' && <span className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded-full animate-pulse flex items-center gap-1">{onlineMessage}</span>}
+                {onlineState !== 'IDLE' && (
+                    <span className={`text-[10px] px-2 py-1 rounded-full animate-pulse flex items-center gap-1 ${isError ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-blue-500 text-white'}`}>
+                        {onlineMessage}
+                    </span>
+                )}
             </div>
             
             {/* CONTENT AREA */}
             {onlineState === 'IDLE' && (
-                <div className="flex gap-2 w-full animate-fadeIn">
+                <div className="flex gap-2 w-full animate-fadeIn relative">
+                    {/* Error Message Overlay for better visibility */}
+                    {isError && (
+                        <div className="absolute -top-10 left-0 right-0 bg-red-600/90 text-white text-xs font-bold p-2 rounded-xl text-center shadow-lg animate-[fadeIn_0.2s] flex items-center justify-center gap-2 z-20">
+                            <AlertCircle size={14} /> {onlineMessage}
+                        </div>
+                    )}
+
                     <input 
                         type="text" 
                         placeholder="Enter Code" 
                         value={roomCode}
                         onChange={(e) => {
-                            setRoomCode(e.target.value.toUpperCase());
+                            // Sanitization: Only alphanumeric, no spaces
+                            const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                            setRoomCode(val);
                             setMode('ONLINE'); 
+                            setOnlineMessage('');
+                            setIsError(false);
                         }}
                         className="flex-1 bg-black/30 p-3 rounded-xl text-sm border border-white/10 focus:border-blue-500 outline-none transition text-white placeholder:text-slate-600 uppercase font-mono w-0"
                     />
@@ -391,7 +423,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             {onlineState === 'SEARCHING' && (
                 <div className="flex flex-col items-center justify-center py-4 space-y-3 animate-fadeIn w-full text-center">
                     <Loader2 className="animate-spin text-blue-400" size={32} />
-                    <p className="text-sm text-slate-300">Connecting to secure room...</p>
+                    <p className="text-sm text-slate-300">{onlineMessage}</p>
                 </div>
             )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, Plus, AlertCircle } from 'lucide-react';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, Plus, AlertCircle, Info } from 'lucide-react';
 import { DICE_SKINS } from '../constants';
 
 interface LobbyProps {
@@ -60,7 +60,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             }
         }
         
-        // B. Listen for Game Start Signal (For Joiners)
+        // B. Listen for Game Start Signal (Event Stream)
         if (e.key === `ludo_action_${roomCode}`) {
             if (e.newValue) {
                 const action = JSON.parse(e.newValue);
@@ -70,11 +70,20 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                 }
             }
         }
+
+        // C. Listen for Room Status (Robust Fallback)
+        if (e.key === `ludo_room_status_${roomCode}` && e.newValue === 'PLAYING') {
+             // ensure we have latest players
+             const lobbyKey = `ludo_lobby_${roomCode}`;
+             const lobbyData = localStorage.getItem(lobbyKey);
+             const currentPlayers = lobbyData ? JSON.parse(lobbyData) : lobbyPlayers;
+             onStartGame('ONLINE', currentPlayers, roomCode, myId);
+        }
     };
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [mode, roomCode, myId, onStartGame]);
+  }, [mode, roomCode, myId, onStartGame, lobbyPlayers]);
 
   // 4. Polling Fallback (CRITICAL FIX: Checks every 1s for updates if event listener fails)
   useEffect(() => {
@@ -94,22 +103,29 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             });
         }
 
-        // Poll for Game Start (Fix for "Waiting for Host" issue)
+        // Poll for Game Start Action
         const actionKey = `ludo_action_${roomCode}`;
         const actionData = localStorage.getItem(actionKey);
         if (actionData) {
             const action = JSON.parse(actionData);
             if (action.type === 'GAME_START') {
-                // Check if we already started? The parent handles idempotent starts usually, 
-                // but we call it to ensure transition.
                 onStartGame('ONLINE', action.players, roomCode, myId);
+                return; 
             }
+        }
+
+        // Poll for Persistent Status (The Fix)
+        const statusKey = `ludo_room_status_${roomCode}`;
+        const status = localStorage.getItem(statusKey);
+        if (status === 'PLAYING') {
+            const currentPlayers = lobbyData ? JSON.parse(lobbyData) : lobbyPlayers;
+            onStartGame('ONLINE', currentPlayers, roomCode, myId);
         }
 
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [mode, roomCode, onlineState, myId, onStartGame]);
+  }, [mode, roomCode, onlineState, myId, onStartGame, lobbyPlayers]);
 
 
   // Helper to update Lobby Data
@@ -154,6 +170,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              
              // Clean up any old actions for this new room code just in case
              localStorage.removeItem(`ludo_action_${code}`);
+             localStorage.removeItem(`ludo_room_status_${code}`); // Clear old status
              
              // Write to LocalStorage (Unique Key)
              localStorage.setItem(`ludo_lobby_${code}`, JSON.stringify(initialPlayers));
@@ -265,12 +282,15 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         // Host starts the game
         players = [...lobbyPlayers];
         
+        // 1. Set Persistent Status (The Fix for Hanging)
+        localStorage.setItem(`ludo_room_status_${roomCode}`, 'PLAYING');
+
         const actionKey = `ludo_action_${roomCode}`;
         
-        // 1. Clear previous action to trigger a fresh event change
+        // 2. Clear previous action to trigger a fresh event change
         localStorage.removeItem(actionKey);
         
-        // 2. Broadcast Start Signal with slight delay to ensure the clear is registered
+        // 3. Broadcast Start Signal with slight delay to ensure the clear is registered
         setTimeout(() => {
             const startAction = {
                 type: 'GAME_START',
@@ -442,7 +462,10 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                  {roomCode}
                                  <Copy size={16} className="text-slate-500 group-hover:text-white transition" />
                              </button>
-                             <p className="text-[10px] text-slate-500 mt-1">Share this code with your friend</p>
+                             <div className="flex items-center gap-1 mt-1 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                                 <Info size={10} className="text-yellow-400" />
+                                 <p className="text-[9px] text-slate-300">Works in different tabs on THIS DEVICE.</p>
+                             </div>
                          </div>
                      )}
                      

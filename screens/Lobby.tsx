@@ -13,46 +13,58 @@ interface LobbyProps {
 }
 
 const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selectedSkin, onBuySkin, onEquipSkin }) => {
-  const [playerName, setPlayerName] = useState('Player 1');
-  const [roomCode, setRoomCode] = useState('');
-  const [mode, setMode] = useState<'LOCAL' | 'ONLINE' | 'AI'>('AI');
+  // Initialize state from Session Storage to survive refreshes (Critical for Mobile)
+  const [playerName, setPlayerName] = useState(() => sessionStorage.getItem('ludo_player_name') || 'Player 1');
+  const [roomCode, setRoomCode] = useState(() => sessionStorage.getItem('ludo_room_code') || '');
+  const [mode, setMode] = useState<'LOCAL' | 'ONLINE' | 'AI'>(() => (sessionStorage.getItem('ludo_mode') as any) || 'AI');
+  const [myId, setMyId] = useState<string>(() => sessionStorage.getItem('ludo_my_id') || '');
+
   const [showShop, setShowShop] = useState(false);
-  
-  // New State for Player Count selection (for AI/Local)
   const [playerCount, setPlayerCount] = useState<2 | 3 | 4>(4);
 
-  // Online Simulation State
+  // Online State
   const [onlineState, setOnlineState] = useState<'IDLE' | 'SEARCHING' | 'LOBBY'>('IDLE');
   const [onlineMessage, setOnlineMessage] = useState('');
-  
-  // Track specific players in the lobby
   const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
-  
-  // Track my own ID in the lobby
-  const [myId, setMyId] = useState<string>('');
 
-  // Sync with LocalStorage for Local Multiplayer Simulation across tabs
+  // 1. Restore Online State on Mount
   useEffect(() => {
+      if (mode === 'ONLINE' && roomCode && myId) {
+          setOnlineState('LOBBY');
+          // Try to fetch existing lobby data immediately
+          const storedKey = `ludo_lobby_${roomCode}`;
+          const storedData = localStorage.getItem(storedKey);
+          if (storedData) {
+              setLobbyPlayers(JSON.parse(storedData));
+          }
+      }
+  }, []);
+
+  // 2. Persist Name
+  useEffect(() => {
+      sessionStorage.setItem('ludo_player_name', playerName);
+  }, [playerName]);
+
+  // 3. Listener for Lobby Updates & Game Start
+  useEffect(() => {
+    if (mode !== 'ONLINE' || !roomCode) return;
+
     const handleStorageChange = (e: StorageEvent) => {
-        // 1. Sync Lobby Players
-        if (e.key === 'ludo_online_room') {
-            const storedRoom = e.newValue;
-            if (storedRoom) {
-                const parsed = JSON.parse(storedRoom);
-                if (parsed.code === roomCode) {
-                     // Update players if code matches
-                     setLobbyPlayers(parsed.players);
-                }
+        // A. Listen for Lobby Player Updates
+        if (e.key === `ludo_lobby_${roomCode}`) {
+            const newValue = e.newValue;
+            if (newValue) {
+                const players = JSON.parse(newValue);
+                setLobbyPlayers(players);
             }
         }
         
-        // 2. Listen for GAME START command (For Joiners)
-        if (roomCode && mode === 'ONLINE' && e.key === `ludo_action_${roomCode}`) {
+        // B. Listen for Game Start Signal (For Joiners)
+        if (e.key === `ludo_action_${roomCode}`) {
             if (e.newValue) {
                 const action = JSON.parse(e.newValue);
                 if (action.type === 'GAME_START') {
-                    // Host has started the game!
-                    // action.players contains the definitive list
+                    // Launch Game
                     onStartGame('ONLINE', action.players, roomCode, myId);
                 }
             }
@@ -61,130 +73,133 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [roomCode, mode, myId, onStartGame]);
+  }, [mode, roomCode, myId, onStartGame]);
 
-  // POLLING FALLBACK: Ensure UI updates even if Storage Event misses (Mobile/Some Browsers)
+  // 4. Polling Fallback (For robust syncing)
   useEffect(() => {
     if (mode !== 'ONLINE' || !roomCode || onlineState !== 'LOBBY') return;
     
     const interval = setInterval(() => {
-        const storedRoomStr = localStorage.getItem('ludo_online_room');
-        if (storedRoomStr) {
-            const storedRoom = JSON.parse(storedRoomStr);
-            if (storedRoom.code === roomCode) {
-                // Only update if different to avoid render loops
-                setLobbyPlayers(prev => {
-                    if (JSON.stringify(prev) !== JSON.stringify(storedRoom.players)) {
-                        return storedRoom.players;
-                    }
-                    return prev;
-                });
-            }
+        const storedKey = `ludo_lobby_${roomCode}`;
+        const storedData = localStorage.getItem(storedKey);
+        if (storedData) {
+            const players = JSON.parse(storedData);
+            // Only update if changed to avoid re-renders
+            setLobbyPlayers(prev => {
+                if (JSON.stringify(prev) !== JSON.stringify(players)) {
+                    return players;
+                }
+                return prev;
+            });
         }
-    }, 1000); // Check every second
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [mode, roomCode, onlineState]);
 
-  // Update localStorage whenever lobbyPlayers changes (if we are in a room)
-  useEffect(() => {
-      if (roomCode && lobbyPlayers.length > 0) {
-          // Only write if we are part of this room/have updated it
-          // In a real app, only the source of truth or specific actions write.
-          // Here, we just sync latest state.
-          localStorage.setItem('ludo_online_room', JSON.stringify({
-              code: roomCode,
-              players: lobbyPlayers
-          }));
-      }
-  }, [lobbyPlayers, roomCode]);
 
-  // Reset online state if switching to other modes manually
-  useEffect(() => {
-    if (mode !== 'ONLINE') {
-        setOnlineState('IDLE');
-        setLobbyPlayers([]);
-        if (onlineState === 'IDLE') setRoomCode('');
-    }
-  }, [mode, onlineState]);
+  // Helper to update Lobby Data
+  const updateLobbyData = (players: any[]) => {
+      if (!roomCode) return;
+      setLobbyPlayers(players);
+      const key = `ludo_lobby_${roomCode}`;
+      localStorage.setItem(key, JSON.stringify(players));
+  };
+
 
   const handleOnlineAction = (action: 'CREATE' | 'JOIN') => {
       if (action === 'JOIN' && !roomCode) return;
       
-      setMode('ONLINE');
       setOnlineState('SEARCHING');
-      setOnlineMessage(action === 'CREATE' ? 'Creating Room...' : 'Connecting to Room...');
+      setOnlineMessage(action === 'CREATE' ? 'Creating Room...' : 'Connecting...');
       
-      // Simulate Network Delay
       setTimeout(() => {
           if (action === 'CREATE') {
+             // Generate New Room
              const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+             const newMyId = `host_${Date.now()}`;
+             
+             // Setup State
              setRoomCode(code);
+             setMyId(newMyId);
+             setMode('ONLINE');
              
-             // Creator is Player 1
-             const creatorId = 'p1';
-             setMyId(creatorId);
+             // Persist to Session
+             sessionStorage.setItem('ludo_room_code', code);
+             sessionStorage.setItem('ludo_my_id', newMyId);
+             sessionStorage.setItem('ludo_mode', 'ONLINE');
+
+             const initialPlayers = [{ id: newMyId, name: playerName, isBot: false, color: 'RED' }];
              
-             const initialPlayers = [{ id: creatorId, name: playerName, isBot: false, color: 'RED' }];
+             // Write to LocalStorage (Unique Key)
+             localStorage.setItem(`ludo_lobby_${code}`, JSON.stringify(initialPlayers));
              setLobbyPlayers(initialPlayers);
              
-             // Initial Sync
-             localStorage.setItem('ludo_online_room', JSON.stringify({ code, players: initialPlayers }));
-             
           } else {
-             // Joiner logic (Simulated)
-             const storedRoomStr = localStorage.getItem('ludo_online_room');
-             let currentPlayers = [];
+             // JOIN Logic
+             const key = `ludo_lobby_${roomCode}`;
+             const storedData = localStorage.getItem(key);
              
-             if (storedRoomStr) {
-                 const storedRoom = JSON.parse(storedRoomStr);
-                 if (storedRoom.code === roomCode) {
-                     currentPlayers = storedRoom.players;
-                 }
+             if (!storedData) {
+                 setOnlineState('IDLE');
+                 alert('Room not found! Please check the code.');
+                 return;
+             }
+             
+             let currentPlayers = JSON.parse(storedData);
+             if (currentPlayers.length >= 4) {
+                 setOnlineState('IDLE');
+                 alert('Room is full!');
+                 return;
              }
 
-             // If no local storage room found (clean simulation), mock a host
-             if (currentPlayers.length === 0) {
-                  currentPlayers = [{ id: 'host', name: 'Host_Player', isBot: false, color: 'RED' }];
+             // Generate ID if not exists
+             let joinerId = myId;
+             if (!joinerId || joinerId.startsWith('host_')) {
+                 joinerId = `p_${Date.now()}`;
+                 setMyId(joinerId);
+             }
+
+             // Persist
+             sessionStorage.setItem('ludo_room_code', roomCode);
+             sessionStorage.setItem('ludo_my_id', joinerId);
+             sessionStorage.setItem('ludo_mode', 'ONLINE');
+             setMode('ONLINE');
+
+             // Check if already in list (refresh protection)
+             const exists = currentPlayers.find((p: any) => p.id === joinerId);
+             if (!exists) {
+                 const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
+                 const nextColor = colorMap[currentPlayers.length];
+                 const newPlayer = { id: joinerId, name: playerName, isBot: false, color: nextColor };
+                 currentPlayers.push(newPlayer);
+                 
+                 // Update Storage
+                 localStorage.setItem(key, JSON.stringify(currentPlayers));
              }
              
-             // Check if already joined to avoid dupes on re-join
-             // For simple logic, we just add new
-             
-             // Add Self
-             const joinerId = `p_${Date.now()}`;
-             setMyId(joinerId);
-             
-             // Assign next color based on count
-             const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
-             const nextColor = colorMap[currentPlayers.length % 4];
-             
-             const newPlayer = { id: joinerId, name: playerName, isBot: false, color: nextColor };
-             const updatedPlayers = [...currentPlayers, newPlayer];
-             
-             setLobbyPlayers(updatedPlayers);
-             
-             // Sync back
-             localStorage.setItem('ludo_online_room', JSON.stringify({ code: roomCode, players: updatedPlayers }));
+             setLobbyPlayers(currentPlayers);
           }
           
           setOnlineState('LOBBY');
           setOnlineMessage('Waiting for players...');
-      }, 1500);
+      }, 800);
   };
 
   const addParticipantToLobby = () => {
+      // Only Host can add bots/placeholders
+      if (lobbyPlayers.length > 0 && lobbyPlayers[0].id !== myId) return;
       if (lobbyPlayers.length >= 4) return;
-      const botNames = ["Guest_Player", "Alex", "Jordan", "Taylor", "Casey"];
-      const nextId = `guest_${Date.now()}`;
-      // Ensure unique name
-      let nextName = botNames[Math.floor(Math.random() * botNames.length)];
-      if(lobbyPlayers.some(p => p.name === nextName)) {
-           nextName += `_${Math.floor(Math.random()*10)}`;
-      }
       
-      const updated = [...lobbyPlayers, { id: nextId, name: nextName, isBot: false }];
-      setLobbyPlayers(updated);
+      const botNames = ["Alex", "Jordan", "Taylor", "Casey", "Jamie"];
+      const nextId = `guest_${Date.now()}_${Math.random()}`;
+      const nextName = botNames[Math.floor(Math.random() * botNames.length)] + `_${lobbyPlayers.length + 1}`;
+      
+      const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
+      const nextColor = colorMap[lobbyPlayers.length];
+
+      const updated = [...lobbyPlayers, { id: nextId, name: nextName, isBot: false, color: nextColor }];
+      updateLobbyData(updated);
   };
 
   const copyRoomCode = () => {
@@ -198,60 +213,42 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
     let startMyId = myId;
     
     if (mode === 'AI') {
-        // Construct player list based on selected count
-        // Player 1 is always the user (Red)
         startMyId = 'p1';
         players.push({ name: playerName, isBot: false, id: 'p1' });
-        
         if (playerCount === 2) {
-            // 2 Players: Red vs Yellow
             players.push({ name: 'Bot Yellow', isBot: true, id: 'bot1' });
         } else {
-            // 3 Players: Red, Green, Yellow
-            // 4 Players: Red, Green, Yellow, Blue
             players.push({ name: 'Bot Green', isBot: true, id: 'bot1' });
             players.push({ name: 'Bot Yellow', isBot: true, id: 'bot2' });
-            if (playerCount === 4) {
-                players.push({ name: 'Bot Blue', isBot: true, id: 'bot3' });
-            }
+            if (playerCount === 4) players.push({ name: 'Bot Blue', isBot: true, id: 'bot3' });
         }
     } else if (mode === 'LOCAL') {
-        // Construct local players based on count
-        startMyId = 'p1'; // In local, we essentially act as P1, but really we control everyone.
+        startMyId = 'p1';
         players.push({ name: 'Player 1', isBot: false, id: 'p1' });
         players.push({ name: 'Player 2', isBot: false, id: 'p2' });
-        
-        if (playerCount >= 3) {
-            players.push({ name: 'Player 3', isBot: false, id: 'p3' });
-        }
-        if (playerCount === 4) {
-            players.push({ name: 'Player 4', isBot: false, id: 'p4' });
-        }
+        if (playerCount >= 3) players.push({ name: 'Player 3', isBot: false, id: 'p3' });
+        if (playerCount === 4) players.push({ name: 'Player 4', isBot: false, id: 'p4' });
     } else if (mode === 'ONLINE') {
-        // Use the lobbyPlayers state
-        players = lobbyPlayers.map(p => ({
-            ...p,
-            isBot: false // Online players are real, just remote
-        }));
+        // Host starts the game
+        players = [...lobbyPlayers];
         
-        // Broadcast Start Game Signal to Joiners
+        // Broadcast Start Signal
         const startAction = {
             type: 'GAME_START',
-            players: players, // Send exact list so order matches
+            players: players,
             timestamp: Date.now()
         };
         localStorage.setItem(`ludo_action_${roomCode}`, JSON.stringify(startAction));
     }
     
-    // Start locally
+    // Start Locally
     onStartGame(mode, players, roomCode, startMyId);
   };
 
-  // Determine if I am the Host (First player in list)
-  const isHost = mode === 'ONLINE' && lobbyPlayers.length > 0 && lobbyPlayers[0].id === myId;
+  // Determine if I am Host
+  const isHost = mode === 'ONLINE' ? (lobbyPlayers.length > 0 && lobbyPlayers[0].id === myId) : true;
 
   return (
-    // FIX: Changed min-h-[100dvh] to h-[100dvh] and added overflow-y-auto to fix mobile scrolling hang
     <div className="flex flex-col items-center h-[100dvh] w-full relative p-4 sm:p-6 overflow-y-auto overflow-x-hidden">
       
       {/* Background Decor */}
@@ -295,20 +292,18 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         {/* Quick Mode Selection */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
             <button 
-                onClick={() => setMode('AI')}
+                onClick={() => { setMode('AI'); sessionStorage.setItem('ludo_mode', 'AI'); }}
                 className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'AI' ? 'border-purple-500 bg-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
             >
                 <Cpu className={`w-8 h-8 mb-2 z-10 ${mode === 'AI' ? 'text-purple-300' : 'text-slate-400'}`} />
                 <span className={`font-bold z-10 ${mode === 'AI' ? 'text-white' : 'text-slate-300'}`}>Vs Bot</span>
-                {mode === 'AI' && <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-transparent"></div>}
             </button>
             <button 
-                onClick={() => setMode('LOCAL')}
+                onClick={() => { setMode('LOCAL'); sessionStorage.setItem('ludo_mode', 'LOCAL'); }}
                 className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'LOCAL' ? 'border-emerald-500 bg-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
             >
                 <Users className={`w-8 h-8 mb-2 z-10 ${mode === 'LOCAL' ? 'text-emerald-300' : 'text-slate-400'}`} />
                 <span className={`font-bold z-10 ${mode === 'LOCAL' ? 'text-white' : 'text-slate-300'}`}>Local</span>
-                {mode === 'LOCAL' && <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/20 to-transparent"></div>}
             </button>
         </div>
 
@@ -337,7 +332,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                     {onlineState === 'SEARCHING' || onlineState === 'LOBBY' ? <Loader2 className="animate-spin" size={16}/> : <Globe size={16}/>} 
                     Online Match
                 </span>
-                {onlineState === 'IDLE' && <span className="text-[10px] bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/30">Live</span>}
+                {onlineState === 'IDLE' && <span className="text-[10px] bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/30">Live Demo</span>}
                 {onlineState !== 'IDLE' && <span className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded-full animate-pulse flex items-center gap-1">{onlineMessage}</span>}
             </div>
             
@@ -373,7 +368,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             {onlineState === 'SEARCHING' && (
                 <div className="flex flex-col items-center justify-center py-4 space-y-3 animate-fadeIn w-full text-center">
                     <Loader2 className="animate-spin text-blue-400" size={32} />
-                    <p className="text-sm text-slate-300">Establishing secure connection...</p>
+                    <p className="text-sm text-slate-300">Connecting to secure room...</p>
                 </div>
             )}
 
@@ -392,6 +387,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                  {roomCode}
                                  <Copy size={16} className="text-slate-500 group-hover:text-white transition" />
                              </button>
+                             <p className="text-[10px] text-slate-500 mt-1">Share this code with your friend</p>
                          </div>
                      )}
                      
@@ -410,33 +406,32 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${i===0 ? 'from-red-500 to-red-700' : 'from-slate-600 to-slate-800'} flex items-center justify-center font-bold text-xs text-white`}>
                                              {p.name.charAt(0)}
                                          </div>
-                                         <span className={`text-sm font-medium ${p.name === playerName ? 'text-white' : 'text-slate-300'}`}>
-                                             {p.name} {p.name === playerName && '(You)'}
+                                         <span className={`text-sm font-medium ${p.id === myId ? 'text-white' : 'text-slate-300'}`}>
+                                             {p.name} {p.id === myId && '(You)'}
                                          </span>
                                      </div>
                                      <span className="text-[10px] bg-black/30 px-2 py-1 rounded-md text-slate-400 border border-white/5">
-                                         {i === 0 ? 'HOST' : p.isBot ? 'BOT' : 'PLAYER'}
+                                         {i === 0 ? 'HOST' : 'PLAYER'}
                                      </span>
                                  </div>
                              ))}
                              
-                             {/* Empty Slots (Clickable to Add - Helper for when Sync Fails or Testing) */}
-                             {Array.from({ length: 4 - lobbyPlayers.length }).map((_, i) => (
+                             {/* Add Participant Button (Host Only) */}
+                             {isHost && lobbyPlayers.length < 4 && (
                                  <button 
-                                     key={`empty-${i}`} 
                                      onClick={addParticipantToLobby}
-                                     className={`w-full flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 hover:bg-white/10 hover:border-white/30 transition group ${lobbyPlayers.length < 2 && i === 0 ? 'ring-1 ring-yellow-500/50 bg-yellow-500/10' : ''}`}
+                                     className={`w-full flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 hover:bg-white/10 hover:border-white/30 transition group ${lobbyPlayers.length < 2 ? 'ring-1 ring-yellow-500/50 bg-yellow-500/10' : ''}`}
                                  >
                                      <div className="flex items-center gap-3">
                                          <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-white/20 transition flex items-center justify-center">
                                              <Plus size={14} className="text-slate-500 group-hover:text-white"/>
                                          </div>
-                                         <span className={`text-sm italic group-hover:text-slate-300 ${lobbyPlayers.length < 2 && i === 0 ? 'text-yellow-200' : 'text-slate-500'}`}>
-                                            {lobbyPlayers.length < 2 && i === 0 ? 'Add Participant (Manual)' : 'Tap to add participant...'}
+                                         <span className={`text-sm italic group-hover:text-slate-300 ${lobbyPlayers.length < 2 ? 'text-yellow-200' : 'text-slate-500'}`}>
+                                            {lobbyPlayers.length < 2 ? 'Add Participant (Required)' : 'Tap to add participant...'}
                                          </span>
                                      </div>
                                  </button>
-                             ))}
+                             )}
                          </div>
                      </div>
                 </div>

@@ -45,7 +45,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
       sessionStorage.setItem('ludo_player_name', playerName);
   }, [playerName]);
 
-  // 3. Listener for Lobby Updates & Game Start
+  // 3. Listener for Lobby Updates & Game Start (Event Based)
   useEffect(() => {
     if (mode !== 'ONLINE' || !roomCode) return;
 
@@ -75,16 +75,16 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [mode, roomCode, myId, onStartGame]);
 
-  // 4. Polling Fallback (For robust syncing)
+  // 4. Polling Fallback (CRITICAL FIX: Checks every 1s for updates if event listener fails)
   useEffect(() => {
     if (mode !== 'ONLINE' || !roomCode || onlineState !== 'LOBBY') return;
     
     const interval = setInterval(() => {
-        const storedKey = `ludo_lobby_${roomCode}`;
-        const storedData = localStorage.getItem(storedKey);
-        if (storedData) {
-            const players = JSON.parse(storedData);
-            // Only update if changed to avoid re-renders
+        // Poll for Player List
+        const lobbyKey = `ludo_lobby_${roomCode}`;
+        const lobbyData = localStorage.getItem(lobbyKey);
+        if (lobbyData) {
+            const players = JSON.parse(lobbyData);
             setLobbyPlayers(prev => {
                 if (JSON.stringify(prev) !== JSON.stringify(players)) {
                     return players;
@@ -92,10 +92,23 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                 return prev;
             });
         }
+
+        // Poll for Game Start (Fix for "Waiting for Host" issue)
+        const actionKey = `ludo_action_${roomCode}`;
+        const actionData = localStorage.getItem(actionKey);
+        if (actionData) {
+            const action = JSON.parse(actionData);
+            if (action.type === 'GAME_START') {
+                // Check if we already started? The parent handles idempotent starts usually, 
+                // but we call it to ensure transition.
+                onStartGame('ONLINE', action.players, roomCode, myId);
+            }
+        }
+
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [mode, roomCode, onlineState]);
+  }, [mode, roomCode, onlineState, myId, onStartGame]);
 
 
   // Helper to update Lobby Data
@@ -130,6 +143,9 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
              sessionStorage.setItem('ludo_mode', 'ONLINE');
 
              const initialPlayers = [{ id: newMyId, name: playerName, isBot: false, color: 'RED' }];
+             
+             // Clean up any old actions for this new room code just in case
+             localStorage.removeItem(`ludo_action_${code}`);
              
              // Write to LocalStorage (Unique Key)
              localStorage.setItem(`ludo_lobby_${code}`, JSON.stringify(initialPlayers));
@@ -232,13 +248,20 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         // Host starts the game
         players = [...lobbyPlayers];
         
-        // Broadcast Start Signal
-        const startAction = {
-            type: 'GAME_START',
-            players: players,
-            timestamp: Date.now()
-        };
-        localStorage.setItem(`ludo_action_${roomCode}`, JSON.stringify(startAction));
+        const actionKey = `ludo_action_${roomCode}`;
+        
+        // 1. Clear previous action to trigger a fresh event change
+        localStorage.removeItem(actionKey);
+        
+        // 2. Broadcast Start Signal with slight delay to ensure the clear is registered
+        setTimeout(() => {
+            const startAction = {
+                type: 'GAME_START',
+                players: players,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(actionKey, JSON.stringify(startAction));
+        }, 50);
     }
     
     // Start Locally

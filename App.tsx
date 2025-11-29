@@ -4,7 +4,7 @@ import Lobby from './screens/Lobby';
 import Board from './components/Board';
 import Dice from './components/Dice';
 import { canMovePiece, checkForKill, getBotMove } from './utils/gameLogic';
-import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, Users, VolumeX } from 'lucide-react';
+import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, VolumeX } from 'lucide-react';
 import { DICE_SKINS, THEMES } from './constants';
 
 declare const Peer: any; // Global from script tag
@@ -88,7 +88,7 @@ const App: React.FC = () => {
     // 3. Autoplay / Interaction Handler
     const tryPlayMusic = () => {
         if (musicEnabled && bgAudio.paused) {
-            bgAudio.play().catch((e) => {
+            bgAudio.play().catch(() => {
                 console.log("Waiting for user interaction to play music");
             });
         }
@@ -123,7 +123,7 @@ const App: React.FC = () => {
       if (!bgMusicRef.current) return;
       if (musicEnabled) {
           if (bgMusicRef.current.paused) {
-              bgMusicRef.current.play().catch(e => console.warn("Interaction needed for music"));
+              bgMusicRef.current.play().catch(() => console.warn("Interaction needed for music"));
           }
       } else {
           bgMusicRef.current.pause();
@@ -354,7 +354,8 @@ const App: React.FC = () => {
 
   const handleRollDice = (triggeringPlayerId?: string) => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
-    
+    if (!currentPlayer) return;
+
     // Online Client Logic
     if (gameState.mode === 'ONLINE' && !isHostRef.current) {
         if (currentPlayer.id !== gameState.myId) return; 
@@ -390,6 +391,8 @@ const App: React.FC = () => {
   const applyRollResult = (rolledValue: number) => {
       setGameState(prev => {
         const currentPlayer = prev.players[prev.currentTurnIndex];
+        if (!currentPlayer) return prev; // Safety check
+
         let logs = [...prev.logs, `${currentPlayer.name} rolled a ${rolledValue}`];
         
         let newConsecutiveSixes = prev.consecutiveSixes;
@@ -461,7 +464,8 @@ const App: React.FC = () => {
 
   const handlePieceClick = (pieceId: number, triggeringPlayerId?: string) => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
-    
+    if (!currentPlayer) return;
+
     // Online Client Logic
     if (gameState.mode === 'ONLINE' && !isHostRef.current) {
         if (currentPlayer.id !== gameState.myId) return; 
@@ -491,8 +495,9 @@ const App: React.FC = () => {
     setGameState(prev => ({...prev, waitingForMove: false}));
     
     const player = gameState.players[gameState.currentTurnIndex];
+    if (!player) return;
+
     const piece = player.pieces.find(p => p.id === pieceId);
-    
     if (!piece) return;
 
     // Deployment is instant (no walking animation)
@@ -540,7 +545,8 @@ const App: React.FC = () => {
     setGameState(prev => {
       const currentPlayerIndex = prev.currentTurnIndex;
       const currentPlayer = prev.players[currentPlayerIndex];
-      
+      if (!currentPlayer) return prev;
+
       // Deep copy needed for checkForKill mutation
       const newPlayers = JSON.parse(JSON.stringify(prev.players));
       const playerToUpdate = newPlayers[currentPlayerIndex];
@@ -609,6 +615,8 @@ const App: React.FC = () => {
   const nextTurn = () => {
     setGameState(prev => {
         const totalPlayers = prev.players.length;
+        if (totalPlayers === 0) return prev; // Safety
+
         if (prev.winners.length >= totalPlayers - 1) {
              const finishedState = { ...prev, status: GameStatus.FINISHED };
              if (isHostRef.current) syncStateToClients(finishedState);
@@ -681,6 +689,7 @@ const App: React.FC = () => {
     if (gameState.mode === 'ONLINE') return; 
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (!currentPlayer) return;
     
     if (currentPlayer.isBot && gameState.canRoll && !gameState.isDiceRolling) {
       setTimeout(() => handleRollDice(), 1000);
@@ -974,15 +983,15 @@ const App: React.FC = () => {
         <div className="order-2 md:order-3 w-full md:w-72 glass-panel border-l border-white/5 p-4 md:p-6 flex flex-row md:flex-col items-center justify-between md:justify-center gap-4 md:gap-6 z-20 flex-shrink-0">
              <div className="text-left md:text-center w-full">
                 <p className="text-indigo-300 text-[10px] uppercase tracking-[0.2em] mb-1 font-bold">Current Turn</p>
-                <h2 className="text-lg sm:text-2xl font-black drop-shadow-md tracking-wider truncate" style={{color: currentTheme.palette[currentPlayer.color]}}>
-                    {currentPlayer.name}
+                <h2 className="text-lg sm:text-2xl font-black drop-shadow-md tracking-wider truncate" style={{color: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff'}}>
+                    {currentPlayer ? currentPlayer.name : 'Unknown'}
                 </h2>
-                <div className="h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full shadow-[0_0_10px_currentColor]" style={{backgroundColor: currentTheme.palette[currentPlayer.color], color: currentTheme.palette[currentPlayer.color]}}></div>
+                <div className="h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full shadow-[0_0_10px_currentColor]" style={{backgroundColor: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff', color: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff'}}></div>
              </div>
 
              <div className="flex-1 flex items-center justify-end md:justify-center w-full my-0 md:my-4">
                  <div className="relative">
-                    <div className="absolute inset-0 blur-2xl opacity-40 transition-colors duration-500" style={{backgroundColor: currentTheme.palette[currentPlayer.color]}}></div>
+                    <div className="absolute inset-0 blur-2xl opacity-40 transition-colors duration-500" style={{backgroundColor: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#000'}}></div>
                     <Dice 
                         value={gameState.diceValue} 
                         rolling={gameState.isDiceRolling} 
@@ -990,10 +999,11 @@ const App: React.FC = () => {
                         disabled={
                             !gameState.canRoll || 
                             gameState.isDiceRolling || 
-                            (currentPlayer.isBot && gameState.status === GameStatus.PLAYING) || 
-                            (gameState.mode === 'ONLINE' && currentPlayer.id !== gameState.myId)
+                            (currentPlayer && currentPlayer.isBot && gameState.status === GameStatus.PLAYING) || 
+                            (gameState.mode === 'ONLINE' && currentPlayer && currentPlayer.id !== gameState.myId) ||
+                            !currentPlayer
                         }
-                        color={`text-[${currentTheme.palette[currentPlayer.color]}]`}
+                        color={currentPlayer ? `text-[${currentTheme.palette[currentPlayer.color]}]` : 'text-white'}
                         skinData={currentSkinData}
                     />
                  </div>

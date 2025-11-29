@@ -38,6 +38,7 @@ const App: React.FC = () => {
   // AUDIO REFS
   const audioContextRef = useRef<AudioContext | null>(null);
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
+  const noiseBufferRef = useRef<AudioBuffer | null>(null); // For Dice Roll Sound
 
   // ANIMATION REFS
   const moveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -67,6 +68,15 @@ const App: React.FC = () => {
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
     if (AudioContext) {
         audioContextRef.current = new AudioContext();
+
+        // Generate White Noise Buffer for Dice Sounds
+        const bufferSize = audioContextRef.current.sampleRate * 1.0; // 1 second buffer
+        const buffer = audioContextRef.current.createBuffer(1, bufferSize, audioContextRef.current.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        noiseBufferRef.current = buffer;
     }
 
     // 2. Setup Background Music
@@ -436,7 +446,7 @@ const App: React.FC = () => {
         
         if (isHostRef.current) syncStateToClients(newState);
         return newState;
-      });
+    });
   }
 
   // Effect for Auto-Pass Turn
@@ -710,51 +720,79 @@ const App: React.FC = () => {
         if (!ctx) return;
         if (ctx.state === 'suspended') ctx.resume();
 
-        const osc = ctx.createOscillator();
-        const gainNode = ctx.createGain();
-        osc.connect(gainNode);
-        gainNode.connect(ctx.destination);
         const now = ctx.currentTime;
+        const gainNode = ctx.createGain();
+        gainNode.connect(ctx.destination);
 
         if (type === 'roll') {
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.linearRampToValueAtTime(50, now + 0.2);
-            gainNode.gain.setValueAtTime(0.1, now);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-            osc.start(now);
-            osc.stop(now + 0.2);
+            // Dice Roll: Filtered white noise for a rattle/shaker sound
+            if (noiseBufferRef.current) {
+                const source = ctx.createBufferSource();
+                source.buffer = noiseBufferRef.current;
+                
+                const filter = ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(800, now);
+                
+                source.connect(filter);
+                filter.connect(gainNode);
+                
+                // Rapid volume envelope for a "shake" burst
+                gainNode.gain.setValueAtTime(0.5, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                
+                source.start(now);
+                source.stop(now + 0.4);
+            }
         } else if (type === 'move') {
-            osc.type = 'sine';
+            // Move: Short, clean "Wood Block" tap
+            const osc = ctx.createOscillator();
+            osc.type = 'sine'; // Sine gives a rounder, wood-like tone compared to triangle
             osc.frequency.setValueAtTime(800, now);
-            osc.frequency.exponentialRampToValueAtTime(400, now + 0.1);
-            gainNode.gain.setValueAtTime(0.2, now);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.08); // Fast pitch drop
+            
+            osc.connect(gainNode);
+            
+            gainNode.gain.setValueAtTime(0.3, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08); // Very short decay
+            
             osc.start(now);
             osc.stop(now + 0.1);
         } else if (type === 'kill') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
+            // Kill: Retro "Power Down" / "Slide" sound
+            const osc = ctx.createOscillator();
+            osc.type = 'sawtooth'; // Sawtooth for "buzz/video game" feel
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.linearRampToValueAtTime(100, now + 0.3); // Distinct slide down
+            
+            osc.connect(gainNode);
+            
             gainNode.gain.setValueAtTime(0.2, now);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+            
             osc.start(now);
             osc.stop(now + 0.3);
         } else if (type === 'win') {
-             osc.disconnect();
-             const notes = [523, 659, 783, 1046, 1318];
-             notes.forEach((freq, i) => {
-                const o = ctx.createOscillator();
-                const g = ctx.createGain();
-                o.connect(g);
-                g.connect(ctx.destination);
-                o.type = 'square';
-                o.frequency.value = freq;
-                g.gain.setValueAtTime(0, now + i*0.1);
-                g.gain.linearRampToValueAtTime(0.1, now + i*0.1 + 0.05);
-                g.gain.exponentialRampToValueAtTime(0.001, now + i*0.1 + 0.5);
-                o.start(now + i*0.1);
-                o.stop(now + i*0.1 + 0.6);
+             // Win: Major Chord Fanfare (C-E-G-C)
+             // Play multiple oscillators slightly staggered
+             const root = 523.25; // C5
+             const ratios = [1, 1.25, 1.5, 2]; // Major chord intervals
+             
+             ratios.forEach((ratio, i) => {
+                const osc = ctx.createOscillator();
+                osc.type = 'triangle'; // Brighter than sine, softer than saw
+                osc.frequency.setValueAtTime(root * ratio, now + i * 0.08); // Staggered start
+                
+                const noteGain = ctx.createGain();
+                noteGain.gain.setValueAtTime(0, now + i * 0.08);
+                noteGain.gain.linearRampToValueAtTime(0.15, now + i * 0.08 + 0.05); // Attack
+                noteGain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 1.2); // Decay
+                
+                osc.connect(noteGain);
+                noteGain.connect(ctx.destination);
+                
+                osc.start(now + i * 0.08);
+                osc.stop(now + i * 0.08 + 1.2);
              });
         }
     } catch (e) { console.warn(e); }

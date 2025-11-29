@@ -60,6 +60,12 @@ const App: React.FC = () => {
     myId: 'p1'
   });
 
+  // Ref to access state in event listeners
+  const gameStateRef = useRef<GameState>(gameState);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
   const currentTheme = THEMES.find(t => t.id === currentThemeId) || THEMES[0];
 
   // --- AUDIO INITIALIZATION ---
@@ -346,28 +352,33 @@ const App: React.FC = () => {
   const handleRemoteAction = (data: any) => {
       if (!isHostRef.current) return;
       
+      // Use Ref for fresh state
+      const currentGs = gameStateRef.current;
+
       if (data.action === 'ROLL') {
-          handleRollDice(data.playerId);
+          handleRollDice(data.playerId, currentGs);
       } else if (data.action === 'MOVE') {
-          handlePieceClick(data.pieceId, data.playerId);
+          handlePieceClick(data.pieceId, data.playerId, currentGs);
       }
   };
 
-  const handleRollDice = (triggeringPlayerId?: string) => {
-    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+  const handleRollDice = (triggeringPlayerId?: string, overrideState?: GameState) => {
+    // Prefer passed state (from ref) for event listeners, else current state
+    const gs = overrideState || gameState;
+    const currentPlayer = gs.players[gs.currentTurnIndex];
     if (!currentPlayer) return;
 
     // Online Client Logic
-    if (gameState.mode === 'ONLINE' && !isHostRef.current) {
-        if (currentPlayer.id !== gameState.myId) return; 
-        connRef.current?.send({ type: 'ACTION', action: 'ROLL', playerId: gameState.myId });
+    if (gs.mode === 'ONLINE' && !isHostRef.current) {
+        if (currentPlayer.id !== gs.myId) return;
+        connRef.current?.send({ type: 'ACTION', action: 'ROLL', playerId: gs.myId });
         return;
     }
 
     // Permission Logic
-    const actorId = triggeringPlayerId || gameState.myId;
+    const actorId = triggeringPlayerId || gs.myId;
     
-    if (gameState.mode === 'LOCAL') {
+    if (gs.mode === 'LOCAL') {
         // In Local Mode (Pass & Play), ignore identity check for humans.
         // Only prevent humans from rolling if it is explicitly a Bot's turn
         if (currentPlayer.isBot) return;
@@ -376,9 +387,9 @@ const App: React.FC = () => {
         if (currentPlayer.id !== actorId && !currentPlayer.isBot) return; 
     }
 
-    if (!gameState.canRoll || gameState.isDiceRolling) return;
+    if (!gs.canRoll || gs.isDiceRolling) return;
 
-    const stateWithRollAnim = { ...gameState, isDiceRolling: true, canRoll: false };
+    const stateWithRollAnim = { ...gs, isDiceRolling: true, canRoll: false };
     setGameState(stateWithRollAnim);
     playSound('roll');
     if (isHostRef.current) syncStateToClients(stateWithRollAnim);
@@ -463,21 +474,22 @@ const App: React.FC = () => {
     }
   }, [gameState.isDiceRolling, gameState.canRoll, gameState.waitingForMove, gameState.status]);
 
-  const handlePieceClick = (pieceId: number, triggeringPlayerId?: string) => {
-    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+  const handlePieceClick = (pieceId: number, triggeringPlayerId?: string, overrideState?: GameState) => {
+    const gs = overrideState || gameState;
+    const currentPlayer = gs.players[gs.currentTurnIndex];
     if (!currentPlayer) return;
 
     // Online Client Logic
-    if (gameState.mode === 'ONLINE' && !isHostRef.current) {
-        if (currentPlayer.id !== gameState.myId) return; 
-        connRef.current?.send({ type: 'ACTION', action: 'MOVE', pieceId, playerId: gameState.myId });
+    if (gs.mode === 'ONLINE' && !isHostRef.current) {
+        if (currentPlayer.id !== gs.myId) return;
+        connRef.current?.send({ type: 'ACTION', action: 'MOVE', pieceId, playerId: gs.myId });
         return;
     }
 
     // Permission Logic
-    const actorId = triggeringPlayerId || gameState.myId;
+    const actorId = triggeringPlayerId || gs.myId;
     
-    if (gameState.mode === 'LOCAL') {
+    if (gs.mode === 'LOCAL') {
          // In Local Mode (Pass & Play), humans can interact for any human player
          if (currentPlayer.isBot) return;
     } else {
@@ -485,10 +497,10 @@ const App: React.FC = () => {
          if (currentPlayer.id !== actorId && !currentPlayer.isBot) return;
     }
 
-    if (!gameState.waitingForMove) return;
+    if (!gs.waitingForMove) return;
 
     // Trigger Animation instead of instant move
-    movePieceStepByStep(pieceId, gameState.diceValue);
+    movePieceStepByStep(pieceId, gs.diceValue);
   };
 
   const movePieceStepByStep = (pieceId: number, totalSteps: number) => {

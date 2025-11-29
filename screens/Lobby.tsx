@@ -9,261 +9,83 @@ interface LobbyProps {
   selectedSkin: string;
   onBuySkin: (skinId: string, price: number) => void;
   onEquipSkin: (skinId: string) => void;
-  onOpenSettings?: () => void;
+  
+  // Online Props
+  isOnlineConnected: boolean;
+  onlineRoomCode: string;
+  onlinePlayers: any[];
+  onlineMyId: string;
+  onJoinOnline: (code: string, name: string) => Promise<boolean>;
+  onCreateOnline: (name: string) => Promise<void>;
+  onStartOnlineMatch: () => void;
+  isHost: boolean;
 }
 
-const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selectedSkin, onBuySkin, onEquipSkin }) => {
-  // Initialize state from Session Storage to survive refreshes (Critical for Mobile)
+const Lobby: React.FC<LobbyProps> = ({ 
+    onStartGame, balance, ownedSkins, selectedSkin, onBuySkin, onEquipSkin,
+    isOnlineConnected, onlineRoomCode, onlinePlayers, onlineMyId, onJoinOnline, onCreateOnline, onStartOnlineMatch, isHost
+}) => {
   const [playerName, setPlayerName] = useState(() => sessionStorage.getItem('ludo_player_name') || 'Player 1');
-  const [roomCode, setRoomCode] = useState(() => sessionStorage.getItem('ludo_room_code') || '');
+  const [roomCodeInput, setRoomCodeInput] = useState('');
   const [mode, setMode] = useState<'LOCAL' | 'ONLINE' | 'AI'>(() => (sessionStorage.getItem('ludo_mode') as any) || 'AI');
-  const [myId, setMyId] = useState<string>(() => sessionStorage.getItem('ludo_my_id') || '');
-
-  const [showShop, setShowShop] = useState(false);
   const [playerCount, setPlayerCount] = useState<2 | 3 | 4>(4);
 
-  // Online State
-  const [onlineState, setOnlineState] = useState<'IDLE' | 'SEARCHING' | 'LOBBY'>('IDLE');
-  const [onlineMessage, setOnlineMessage] = useState('');
-  const [isError, setIsError] = useState(false);
-  const [lobbyPlayers, setLobbyPlayers] = useState<any[]>([]);
+  const [showShop, setShowShop] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  // 1. Restore Online State on Mount
-  useEffect(() => {
-      if (mode === 'ONLINE' && roomCode && myId) {
-          setOnlineState('LOBBY');
-          // Try to fetch existing lobby data immediately
-          const storedKey = `ludo_lobby_${roomCode}`;
-          const storedData = localStorage.getItem(storedKey);
-          if (storedData) {
-              setLobbyPlayers(JSON.parse(storedData));
-          }
-      }
-  }, []);
-
-  // 2. Persist Name
+  // Persist Name
   useEffect(() => {
       sessionStorage.setItem('ludo_player_name', playerName);
   }, [playerName]);
 
-  // 3. Listener for Lobby Updates & Game Start (Event Based)
+  // Sync mode if online is active
   useEffect(() => {
-    if (mode !== 'ONLINE' || !roomCode) return;
+      if (isOnlineConnected) {
+          setMode('ONLINE');
+      }
+  }, [isOnlineConnected]);
 
-    const handleStorageChange = (e: StorageEvent) => {
-        // A. Listen for Lobby Player Updates
-        if (e.key === `ludo_lobby_${roomCode}`) {
-            const newValue = e.newValue;
-            if (newValue) {
-                const players = JSON.parse(newValue);
-                setLobbyPlayers(players);
-            }
-        }
-        
-        // B. Listen for Game Start Signal (Event Stream)
-        if (e.key === `ludo_action_${roomCode}`) {
-            if (e.newValue) {
-                const action = JSON.parse(e.newValue);
-                if (action.type === 'GAME_START') {
-                    // Launch Game
-                    onStartGame('ONLINE', action.players, roomCode, myId);
-                }
-            }
-        }
-
-        // C. Listen for Room Status (Robust Fallback)
-        if (e.key === `ludo_room_status_${roomCode}` && e.newValue === 'PLAYING') {
-             // ensure we have latest players
-             const lobbyKey = `ludo_lobby_${roomCode}`;
-             const lobbyData = localStorage.getItem(lobbyKey);
-             const currentPlayers = lobbyData ? JSON.parse(lobbyData) : lobbyPlayers;
-             onStartGame('ONLINE', currentPlayers, roomCode, myId);
-        }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [mode, roomCode, myId, onStartGame, lobbyPlayers]);
-
-  // 4. Polling Fallback (CRITICAL FIX: Checks every 1s for updates if event listener fails)
-  useEffect(() => {
-    if (mode !== 'ONLINE' || !roomCode || onlineState !== 'LOBBY') return;
-    
-    const interval = setInterval(() => {
-        // Poll for Player List
-        const lobbyKey = `ludo_lobby_${roomCode}`;
-        const lobbyData = localStorage.getItem(lobbyKey);
-        if (lobbyData) {
-            const players = JSON.parse(lobbyData);
-            setLobbyPlayers(prev => {
-                if (JSON.stringify(prev) !== JSON.stringify(players)) {
-                    return players;
-                }
-                return prev;
-            });
-        }
-
-        // Poll for Game Start Action
-        const actionKey = `ludo_action_${roomCode}`;
-        const actionData = localStorage.getItem(actionKey);
-        if (actionData) {
-            const action = JSON.parse(actionData);
-            if (action.type === 'GAME_START') {
-                onStartGame('ONLINE', action.players, roomCode, myId);
-                return; 
-            }
-        }
-
-        // Poll for Persistent Status (The Fix)
-        const statusKey = `ludo_room_status_${roomCode}`;
-        const status = localStorage.getItem(statusKey);
-        if (status === 'PLAYING') {
-            const currentPlayers = lobbyData ? JSON.parse(lobbyData) : lobbyPlayers;
-            onStartGame('ONLINE', currentPlayers, roomCode, myId);
-        }
-
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [mode, roomCode, onlineState, myId, onStartGame, lobbyPlayers]);
-
-
-  // Helper to update Lobby Data
-  const updateLobbyData = (players: any[]) => {
-      if (!roomCode) return;
-      setLobbyPlayers(players);
-      const key = `ludo_lobby_${roomCode}`;
-      localStorage.setItem(key, JSON.stringify(players));
-  };
-
-
-  const handleOnlineAction = (action: 'CREATE' | 'JOIN') => {
-      const cleanCode = roomCode.trim().toUpperCase();
-
-      if (action === 'JOIN' && !cleanCode) {
-          setOnlineMessage('Please enter a room code');
-          setIsError(true);
+  const handleOnlineAction = async (action: 'CREATE' | 'JOIN') => {
+      if (!playerName.trim()) {
+          setErrorMessage('Please enter a name');
+          setTimeout(() => setErrorMessage(''), 3000);
           return;
       }
-      
-      setOnlineState('SEARCHING');
-      setOnlineMessage(action === 'CREATE' ? 'Creating Room...' : 'Connecting...');
-      setIsError(false);
-      
-      setTimeout(() => {
+
+      setIsProcessing(true);
+      setErrorMessage('');
+
+      try {
           if (action === 'CREATE') {
-             // Generate New Room
-             const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-             const newMyId = `host_${Date.now()}`;
-             
-             // Setup State
-             setRoomCode(code);
-             setMyId(newMyId);
-             setMode('ONLINE');
-             
-             // Persist to Session
-             sessionStorage.setItem('ludo_room_code', code);
-             sessionStorage.setItem('ludo_my_id', newMyId);
-             sessionStorage.setItem('ludo_mode', 'ONLINE');
-
-             const initialPlayers = [{ id: newMyId, name: playerName, isBot: false, color: 'RED' }];
-             
-             // Clean up any old actions for this new room code just in case
-             localStorage.removeItem(`ludo_action_${code}`);
-             localStorage.removeItem(`ludo_room_status_${code}`); // Clear old status
-             
-             // Write to LocalStorage (Unique Key)
-             localStorage.setItem(`ludo_lobby_${code}`, JSON.stringify(initialPlayers));
-             setLobbyPlayers(initialPlayers);
-             
+              await onCreateOnline(playerName);
           } else {
-             // JOIN Logic
-             const key = `ludo_lobby_${cleanCode}`;
-             const storedData = localStorage.getItem(key);
-             
-             if (!storedData) {
-                 setOnlineState('IDLE');
-                 setOnlineMessage('❌ Room not found! Check code.');
-                 setIsError(true);
-                 // Auto-clear error after 3s
-                 setTimeout(() => {
-                     setOnlineMessage('');
-                     setIsError(false);
-                 }, 3000);
-                 return;
-             }
-             
-             let currentPlayers = JSON.parse(storedData);
-             if (currentPlayers.length >= 4) {
-                 setOnlineState('IDLE');
-                 setOnlineMessage('❌ Room is full!');
-                 setIsError(true);
-                 setTimeout(() => { setOnlineMessage(''); setIsError(false); }, 3000);
-                 return;
-             }
-
-             // Generate ID if not exists
-             let joinerId = myId;
-             if (!joinerId || joinerId.startsWith('host_')) {
-                 joinerId = `p_${Date.now()}`;
-                 setMyId(joinerId);
-             }
-
-             // Persist
-             sessionStorage.setItem('ludo_room_code', cleanCode);
-             sessionStorage.setItem('ludo_my_id', joinerId);
-             sessionStorage.setItem('ludo_mode', 'ONLINE');
-             setMode('ONLINE');
-
-             // Check if already in list (refresh protection)
-             const exists = currentPlayers.find((p: any) => p.id === joinerId);
-             if (!exists) {
-                 const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
-                 const nextColor = colorMap[currentPlayers.length];
-                 const newPlayer = { id: joinerId, name: playerName, isBot: false, color: nextColor };
-                 currentPlayers.push(newPlayer);
-                 
-                 // Update Storage
-                 localStorage.setItem(key, JSON.stringify(currentPlayers));
-             }
-             
-             setLobbyPlayers(currentPlayers);
+              if (!roomCodeInput.trim()) {
+                  throw new Error('Enter Room Code');
+              }
+              const success = await onJoinOnline(roomCodeInput.toUpperCase(), playerName);
+              if (!success) {
+                  throw new Error('Room not found or connection failed');
+              }
           }
-          
-          setOnlineState('LOBBY');
-          setOnlineMessage('Waiting for players...');
-          setIsError(false);
-      }, 800);
-  };
-
-  const addParticipantToLobby = () => {
-      // Only Host can add bots/placeholders
-      if (lobbyPlayers.length > 0 && lobbyPlayers[0].id !== myId) return;
-      if (lobbyPlayers.length >= 4) return;
-      
-      const botNames = ["Alex", "Jordan", "Taylor", "Casey", "Jamie"];
-      const nextId = `guest_${Date.now()}_${Math.random()}`;
-      const nextName = botNames[Math.floor(Math.random() * botNames.length)] + `_${lobbyPlayers.length + 1}`;
-      
-      const colorMap = ['RED', 'GREEN', 'YELLOW', 'BLUE'];
-      const nextColor = colorMap[lobbyPlayers.length];
-
-      const updated = [...lobbyPlayers, { id: nextId, name: nextName, isBot: false, color: nextColor }];
-      updateLobbyData(updated);
+      } catch (err: any) {
+          setErrorMessage(err.message || 'Connection Failed');
+          setTimeout(() => setErrorMessage(''), 4000);
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
   const copyRoomCode = () => {
-      navigator.clipboard.writeText(roomCode);
-      setOnlineMessage('Code Copied!');
-      setTimeout(() => setOnlineMessage('Waiting for players...'), 2000);
+      navigator.clipboard.writeText(onlineRoomCode);
+      setErrorMessage('Code Copied!'); // Using error message slot for success toast temporarily
+      setTimeout(() => setErrorMessage(''), 2000);
   };
 
-  const handleStart = () => {
+  const handleStartLocal = () => {
     let players: any[] = [];
-    let startMyId = myId;
     
     if (mode === 'AI') {
-        startMyId = 'p1';
         players.push({ name: playerName, isBot: false, id: 'p1' });
         if (playerCount === 2) {
             players.push({ name: 'Bot Yellow', isBot: true, id: 'bot1' });
@@ -272,41 +94,15 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             players.push({ name: 'Bot Yellow', isBot: true, id: 'bot2' });
             if (playerCount === 4) players.push({ name: 'Bot Blue', isBot: true, id: 'bot3' });
         }
+        onStartGame('AI', players, undefined, 'p1');
     } else if (mode === 'LOCAL') {
-        startMyId = 'p1';
         players.push({ name: 'Player 1', isBot: false, id: 'p1' });
         players.push({ name: 'Player 2', isBot: false, id: 'p2' });
         if (playerCount >= 3) players.push({ name: 'Player 3', isBot: false, id: 'p3' });
         if (playerCount === 4) players.push({ name: 'Player 4', isBot: false, id: 'p4' });
-    } else if (mode === 'ONLINE') {
-        // Host starts the game
-        players = [...lobbyPlayers];
-        
-        // 1. Set Persistent Status (The Fix for Hanging)
-        localStorage.setItem(`ludo_room_status_${roomCode}`, 'PLAYING');
-
-        const actionKey = `ludo_action_${roomCode}`;
-        
-        // 2. Clear previous action to trigger a fresh event change
-        localStorage.removeItem(actionKey);
-        
-        // 3. Broadcast Start Signal with slight delay to ensure the clear is registered
-        setTimeout(() => {
-            const startAction = {
-                type: 'GAME_START',
-                players: players,
-                timestamp: Date.now()
-            };
-            localStorage.setItem(actionKey, JSON.stringify(startAction));
-        }, 50);
+        onStartGame('LOCAL', players, undefined, 'p1');
     }
-    
-    // Start Locally
-    onStartGame(mode, players, roomCode, startMyId);
   };
-
-  // Determine if I am Host
-  const isHost = mode === 'ONLINE' ? (lobbyPlayers.length > 0 && lobbyPlayers[0].id === myId) : true;
 
   return (
     <div className="flex flex-col items-center h-[100dvh] w-full relative p-4 sm:p-6 overflow-y-auto overflow-x-hidden">
@@ -344,7 +140,8 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
             type="text" 
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
-            className="w-full bg-black/30 text-white p-3 sm:p-4 rounded-2xl mt-2 focus:ring-2 focus:ring-purple-500 outline-none border border-white/10 transition-all placeholder:text-white/20 text-sm sm:text-base"
+            disabled={isOnlineConnected}
+            className="w-full bg-black/30 text-white p-3 sm:p-4 rounded-2xl mt-2 focus:ring-2 focus:ring-purple-500 outline-none border border-white/10 transition-all placeholder:text-white/20 text-sm sm:text-base disabled:opacity-50"
             placeholder="Enter nickname"
           />
         </div>
@@ -352,15 +149,17 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         {/* Quick Mode Selection */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
             <button 
-                onClick={() => { setMode('AI'); sessionStorage.setItem('ludo_mode', 'AI'); }}
-                className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'AI' ? 'border-purple-500 bg-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                onClick={() => { if(!isOnlineConnected) { setMode('AI'); sessionStorage.setItem('ludo_mode', 'AI'); } }}
+                disabled={isOnlineConnected}
+                className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'AI' ? 'border-purple-500 bg-purple-500/20 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'} ${isOnlineConnected ? 'opacity-30 grayscale' : ''}`}
             >
                 <Cpu className={`w-8 h-8 mb-2 z-10 ${mode === 'AI' ? 'text-purple-300' : 'text-slate-400'}`} />
                 <span className={`font-bold z-10 ${mode === 'AI' ? 'text-white' : 'text-slate-300'}`}>Vs Bot</span>
             </button>
             <button 
-                onClick={() => { setMode('LOCAL'); sessionStorage.setItem('ludo_mode', 'LOCAL'); }}
-                className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'LOCAL' ? 'border-emerald-500 bg-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                onClick={() => { if(!isOnlineConnected) { setMode('LOCAL'); sessionStorage.setItem('ludo_mode', 'LOCAL'); } }}
+                disabled={isOnlineConnected}
+                className={`relative overflow-hidden flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 ${mode === 'LOCAL' ? 'border-emerald-500 bg-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10'} ${isOnlineConnected ? 'opacity-30 grayscale' : ''}`}
             >
                 <Users className={`w-8 h-8 mb-2 z-10 ${mode === 'LOCAL' ? 'text-emerald-300' : 'text-slate-400'}`} />
                 <span className={`font-bold z-10 ${mode === 'LOCAL' ? 'text-white' : 'text-slate-300'}`}>Local</span>
@@ -368,7 +167,7 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         </div>
 
         {/* Player Count Selection (Visible for AI & LOCAL) */}
-        {(mode === 'AI' || mode === 'LOCAL') && (
+        {!isOnlineConnected && (mode === 'AI' || mode === 'LOCAL') && (
             <div className="mb-6 animate-fadeIn">
                 <label className="text-xs font-bold text-indigo-300 ml-2 uppercase tracking-wide">Number of Players</label>
                 <div className="grid grid-cols-3 gap-2 mt-2">
@@ -389,103 +188,93 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         <div className={`glass-card p-4 rounded-2xl mb-6 border transition-all duration-300 min-h-[160px] flex flex-col justify-center ${mode === 'ONLINE' ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-white/10 border-dashed hover:border-white/20'}`}>
             <div className="flex items-center justify-between mb-4 w-full">
                 <span className={`font-bold flex items-center gap-2 ${mode === 'ONLINE' ? 'text-blue-300' : 'text-slate-400'}`}>
-                    {onlineState === 'SEARCHING' || onlineState === 'LOBBY' ? <Loader2 className="animate-spin" size={16}/> : <Globe size={16}/>} 
+                    {isProcessing ? <Loader2 className="animate-spin" size={16}/> : <Globe size={16}/>} 
                     Online Match
                 </span>
-                {onlineState === 'IDLE' && <span className="text-[10px] bg-green-500/20 text-green-300 px-2 py-1 rounded-full border border-green-500/30">Live Demo</span>}
-                {onlineState !== 'IDLE' && (
-                    <span className={`text-[10px] px-2 py-1 rounded-full animate-pulse flex items-center gap-1 ${isError ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-blue-500 text-white'}`}>
-                        {onlineMessage}
+                
+                {errorMessage && (
+                    <span className="text-[10px] bg-red-500/20 text-red-300 px-2 py-1 rounded-full border border-red-500/30 animate-pulse flex items-center gap-1">
+                        <AlertCircle size={10}/> {errorMessage}
                     </span>
                 )}
             </div>
             
-            {/* CONTENT AREA */}
-            {onlineState === 'IDLE' && (
+            {/* IDLE STATE: Input & Buttons */}
+            {!isOnlineConnected && (
                 <div className="flex gap-2 w-full animate-fadeIn relative">
-                    {/* Error Message Overlay for better visibility */}
-                    {isError && (
-                        <div className="absolute -top-10 left-0 right-0 bg-red-600/90 text-white text-xs font-bold p-2 rounded-xl text-center shadow-lg animate-[fadeIn_0.2s] flex items-center justify-center gap-2 z-20">
-                            <AlertCircle size={14} /> {onlineMessage}
-                        </div>
+                    {isProcessing ? (
+                         <div className="w-full flex flex-col items-center py-4 text-blue-300 gap-2">
+                             <Loader2 className="animate-spin" size={24}/>
+                             <span className="text-xs">Connecting to Network...</span>
+                         </div>
+                    ) : (
+                        <>
+                            <input 
+                                type="text" 
+                                placeholder="ROOM CODE" 
+                                value={roomCodeInput}
+                                onChange={(e) => {
+                                    setRoomCodeInput(e.target.value.toUpperCase());
+                                    setMode('ONLINE');
+                                }}
+                                className="flex-1 bg-black/30 p-3 rounded-xl text-sm border border-white/10 focus:border-blue-500 outline-none transition text-white placeholder:text-slate-600 uppercase font-mono w-0"
+                            />
+                            <button 
+                                onClick={() => handleOnlineAction('JOIN')}
+                                disabled={!roomCodeInput}
+                                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-blue-900/20 whitespace-nowrap"
+                            >
+                                Join
+                            </button>
+                            <button 
+                                onClick={() => handleOnlineAction('CREATE')}
+                                className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-purple-900/20 whitespace-nowrap"
+                            >
+                                Create
+                            </button>
+                        </>
                     )}
-
-                    <input 
-                        type="text" 
-                        placeholder="Enter Code" 
-                        value={roomCode}
-                        onChange={(e) => {
-                            // Sanitization: Only alphanumeric, no spaces
-                            const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                            setRoomCode(val);
-                            setMode('ONLINE'); 
-                            setOnlineMessage('');
-                            setIsError(false);
-                        }}
-                        className="flex-1 bg-black/30 p-3 rounded-xl text-sm border border-white/10 focus:border-blue-500 outline-none transition text-white placeholder:text-slate-600 uppercase font-mono w-0"
-                    />
-                    <button 
-                        onClick={() => handleOnlineAction('JOIN')}
-                        disabled={!roomCode}
-                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-blue-900/20 whitespace-nowrap"
-                    >
-                        Join
-                    </button>
-                    <button 
-                         onClick={() => handleOnlineAction('CREATE')}
-                         className="bg-purple-600 hover:bg-purple-500 text-white px-4 rounded-xl font-bold text-sm transition shadow-lg shadow-purple-900/20 whitespace-nowrap"
-                    >
-                        Create
-                    </button>
                 </div>
             )}
 
-            {onlineState === 'SEARCHING' && (
-                <div className="flex flex-col items-center justify-center py-4 space-y-3 animate-fadeIn w-full text-center">
-                    <Loader2 className="animate-spin text-blue-400" size={32} />
-                    <p className="text-sm text-slate-300">{onlineMessage}</p>
-                </div>
-            )}
-
-            {onlineState === 'LOBBY' && (
+            {/* CONNECTED STATE: Lobby List */}
+            {isOnlineConnected && (
                 <div className="flex flex-col items-center justify-center py-2 space-y-3 animate-fadeIn w-full">
                      {/* Room Code Display */}
-                     {roomCode && (
-                         <div className="flex flex-col items-center w-full">
-                             <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs text-slate-400 uppercase tracking-widest">Room Code</span>
-                             </div>
-                             <button 
-                                onClick={copyRoomCode}
-                                className="flex items-center gap-3 text-2xl font-mono font-bold text-white tracking-[0.2em] bg-black/40 px-6 py-3 rounded-xl border border-white/10 hover:bg-black/60 transition group w-full justify-center"
-                             >
-                                 {roomCode}
-                                 <Copy size={16} className="text-slate-500 group-hover:text-white transition" />
-                             </button>
-                             <div className="flex items-center gap-1 mt-1 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                                 <Info size={10} className="text-yellow-400" />
-                                 <p className="text-[9px] text-slate-300">Works in different tabs on THIS DEVICE.</p>
-                             </div>
+                     <div className="flex flex-col items-center w-full">
+                         <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs text-slate-400 uppercase tracking-widest">Room Code</span>
                          </div>
-                     )}
+                         <button 
+                            onClick={copyRoomCode}
+                            className="flex items-center gap-3 text-2xl font-mono font-bold text-white tracking-[0.2em] bg-black/40 px-6 py-3 rounded-xl border border-white/10 hover:bg-black/60 transition group w-full justify-center"
+                         >
+                             {onlineRoomCode}
+                             <Copy size={16} className="text-slate-500 group-hover:text-white transition" />
+                         </button>
+                         <div className="flex items-center gap-1 mt-1 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                             <Info size={10} className="text-yellow-400" />
+                             <p className="text-[9px] text-slate-300">Share code with friends on ANY device.</p>
+                         </div>
+                     </div>
                      
                      {/* Lobby List */}
                      <div className="w-full mt-4 space-y-2">
                          <div className="text-xs text-slate-400 flex justify-between px-1">
-                             <span className="font-bold text-blue-300">Participants ({lobbyPlayers.length}/4)</span>
-                             {lobbyPlayers.length < 2 && <span className="text-[10px] text-red-400 font-bold uppercase animate-pulse">Min 2 Players</span>}
+                             <span className="font-bold text-blue-300">Participants ({onlinePlayers.length}/4)</span>
+                             {onlinePlayers.length < 2 && <span className="text-[10px] text-red-400 font-bold uppercase animate-pulse">Min 2 Players</span>}
                          </div>
                          
                          {/* Player Slots */}
                          <div className="space-y-2">
-                             {lobbyPlayers.map((p, i) => (
+                             {onlinePlayers.map((p, i) => (
                                  <div key={i} className="flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-white/5">
                                      <div className="flex items-center gap-3">
                                          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${i===0 ? 'from-red-500 to-red-700' : 'from-slate-600 to-slate-800'} flex items-center justify-center font-bold text-xs text-white`}>
                                              {p.name.charAt(0)}
                                          </div>
-                                         <span className={`text-sm font-medium ${p.id === myId ? 'text-white' : 'text-slate-300'}`}>
-                                             {p.name} {p.id === myId && '(You)'}
+                                         <span className={`text-sm font-medium ${p.id === onlineMyId ? 'text-white' : 'text-slate-300'}`}>
+                                             {p.name} {p.id === onlineMyId && '(You)'}
                                          </span>
                                      </div>
                                      <span className="text-[10px] bg-black/30 px-2 py-1 rounded-md text-slate-400 border border-white/5">
@@ -494,22 +283,13 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
                                  </div>
                              ))}
                              
-                             {/* Add Participant Button (Host Only) */}
-                             {isHost && lobbyPlayers.length < 4 && (
-                                 <button 
-                                     onClick={addParticipantToLobby}
-                                     className={`w-full flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-dashed border-white/10 hover:bg-white/10 hover:border-white/30 transition group ${lobbyPlayers.length < 2 ? 'ring-1 ring-yellow-500/50 bg-yellow-500/10' : ''}`}
-                                 >
-                                     <div className="flex items-center gap-3">
-                                         <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-white/20 transition flex items-center justify-center">
-                                             <Plus size={14} className="text-slate-500 group-hover:text-white"/>
-                                         </div>
-                                         <span className={`text-sm italic group-hover:text-slate-300 ${lobbyPlayers.length < 2 ? 'text-yellow-200' : 'text-slate-500'}`}>
-                                            {lobbyPlayers.length < 2 ? 'Add Participant (Required)' : 'Tap to add participant...'}
-                                         </span>
-                                     </div>
-                                 </button>
-                             )}
+                             {/* Empty Slots */}
+                             {[...Array(4 - onlinePlayers.length)].map((_, i) => (
+                                <div key={`empty-${i}`} className="flex items-center gap-3 p-2.5 rounded-xl border border-dashed border-white/5 opacity-50">
+                                     <div className="w-8 h-8 rounded-full bg-white/5"></div>
+                                     <span className="text-xs text-slate-600 italic">Waiting...</span>
+                                </div>
+                             ))}
                          </div>
                      </div>
                 </div>
@@ -526,28 +306,34 @@ const Lobby: React.FC<LobbyProps> = ({ onStartGame, balance, ownedSkins, selecte
         </button>
 
         {/* Start Game Button Area */}
-        {mode === 'ONLINE' && lobbyPlayers.length >= 2 && !isHost ? (
-            <div className="w-full bg-slate-800 text-slate-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 animate-pulse border border-white/10 shadow-inner">
-                <Loader2 className="animate-spin" /> Waiting for Host to Start...
-            </div>
+        {isOnlineConnected ? (
+             isHost ? (
+                <button 
+                    onClick={onStartOnlineMatch}
+                    disabled={onlinePlayers.length < 2}
+                    className={`w-full font-extrabold text-xl py-4 rounded-2xl shadow-xl transform transition active:scale-95 flex items-center justify-center gap-3 relative overflow-hidden group ${
+                        onlinePlayers.length < 2
+                        ? 'bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
+                        : 'bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 text-white shadow-red-900/40'
+                    }`}
+                >
+                    <Play fill={onlinePlayers.length < 2 ? 'gray' : 'white'} className="relative z-10" /> 
+                    <span className="relative z-10">START ONLINE MATCH</span>
+                </button>
+             ) : (
+                <div className="w-full bg-slate-800 text-slate-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 animate-pulse border border-white/10 shadow-inner">
+                    <Loader2 className="animate-spin" /> Waiting for Host to Start...
+                </div>
+             )
         ) : (
             <button 
-                onClick={handleStart}
-                disabled={mode === 'ONLINE' && (lobbyPlayers.length < 2 || onlineState !== 'LOBBY')}
-                className={`w-full font-extrabold text-xl py-4 rounded-2xl shadow-xl transform transition active:scale-95 flex items-center justify-center gap-3 relative overflow-hidden group ${
-                    mode === 'ONLINE' && lobbyPlayers.length < 2
-                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
-                    : 'bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 hover:from-pink-400 hover:to-yellow-400 text-white shadow-red-900/40'
-                }`}
+                onClick={handleStartLocal}
+                disabled={mode === 'ONLINE'} // Should have connected first
+                className={`w-full font-extrabold text-xl py-4 rounded-2xl shadow-xl transform transition active:scale-95 flex items-center justify-center gap-3 relative overflow-hidden group bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white shadow-green-900/40`}
             >
                 <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 blur-md"></div>
-                <Play fill={mode === 'ONLINE' && lobbyPlayers.length < 2 ? 'gray' : 'white'} className="relative z-10" /> 
-                <span className="relative z-10">
-                    {mode === 'ONLINE' 
-                        ? (onlineState === 'IDLE' ? 'Create or Join first' : lobbyPlayers.length < 2 ? 'Waiting for Players...' : 'START MATCH') 
-                        : 'PLAY NOW'
-                    }
-                </span>
+                <Play fill="white" className="relative z-10" /> 
+                <span className="relative z-10">PLAY {mode === 'AI' ? 'VS BOT' : 'LOCAL'}</span>
             </button>
         )}
       </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GameState, GameStatus, Player, PlayerColor, Piece, Difficulty } from './types';
 import Lobby from './screens/Lobby';
 import Board from './components/Board';
-import Dice from './components/Dice';
+// Dice is now used inside Board
 import { canMovePiece, checkForKill, getBotMove } from './utils/gameLogic';
 import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, VolumeX } from 'lucide-react';
 import { DICE_SKINS, THEMES } from './constants';
@@ -333,6 +333,7 @@ const App: React.FC = () => {
           const newState = {
               ...prev,
               status: GameStatus.PLAYING,
+              canRoll: true,
               logs: [...prev.logs, "Host started the match!"]
           };
           syncStateToClients(newState);
@@ -955,7 +956,22 @@ const App: React.FC = () => {
         {/* Center: Board */}
         <div className="order-1 md:order-2 flex-1 flex items-center justify-center p-2 md:p-4 relative overflow-visible md:overflow-hidden flex-shrink-0">
              <div className="absolute w-[90%] aspect-square bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none"></div>
-             <Board gameState={gameState} onPieceClick={(id) => handlePieceClick(id)} theme={currentTheme} />
+             <Board
+                 gameState={gameState}
+                 onPieceClick={(id) => handlePieceClick(id)}
+                 theme={currentTheme}
+                 diceValue={gameState.diceValue}
+                 isDiceRolling={gameState.isDiceRolling}
+                 onDiceRoll={() => handleRollDice()}
+                 isDiceDisabled={
+                    !gameState.canRoll ||
+                    gameState.isDiceRolling ||
+                    (currentPlayer && currentPlayer.isBot && gameState.status === GameStatus.PLAYING) ||
+                    (gameState.mode === 'ONLINE' && currentPlayer && currentPlayer.id !== gameState.myId) ||
+                    !currentPlayer
+                 }
+                 diceSkin={currentSkinData}
+             />
              {gameState.status === GameStatus.FINISHED && (
                 <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-8 backdrop-blur-md animate-[fadeIn_0.5s]">
                    <Trophy size={100} className="text-yellow-400 mb-6 animate-bounce drop-shadow-[0_0_20px_rgba(250,204,21,0.5)]"/>
@@ -989,23 +1005,22 @@ const App: React.FC = () => {
                 <div className="h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full shadow-[0_0_10px_currentColor]" style={{backgroundColor: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff', color: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff'}}></div>
              </div>
 
+             {/* Moved Dice to Board Center - Placeholder or Status info */}
              <div className="flex-1 flex items-center justify-end md:justify-center w-full my-0 md:my-4">
-                 <div className="relative">
-                    <div className="absolute inset-0 blur-2xl opacity-40 transition-colors duration-500" style={{backgroundColor: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#000'}}></div>
-                    <Dice 
-                        value={gameState.diceValue} 
-                        rolling={gameState.isDiceRolling} 
-                        onRoll={() => handleRollDice()}
-                        disabled={
-                            !gameState.canRoll || 
-                            gameState.isDiceRolling || 
-                            (currentPlayer && currentPlayer.isBot && gameState.status === GameStatus.PLAYING) || 
-                            (gameState.mode === 'ONLINE' && currentPlayer && currentPlayer.id !== gameState.myId) ||
-                            !currentPlayer
-                        }
-                        color={currentPlayer ? `text-[${currentTheme.palette[currentPlayer.color]}]` : 'text-white'}
-                        skinData={currentSkinData}
-                    />
+                 <div className="text-center">
+                    <p className="text-xs text-slate-400 mb-2">Game Info</p>
+                    <div className="bg-white/5 p-3 rounded-xl border border-white/10">
+                        <div className="flex justify-between gap-4 text-xs font-mono">
+                           <span className="text-slate-500">Mode</span>
+                           <span className="text-white font-bold">{gameState.mode}</span>
+                        </div>
+                        {gameState.mode === 'ONLINE' && (
+                           <div className="flex justify-between gap-4 text-xs font-mono mt-2">
+                             <span className="text-slate-500">Host</span>
+                             <span className="text-white font-bold">{isHostRef.current ? 'You' : 'Remote'}</span>
+                           </div>
+                        )}
+                    </div>
                  </div>
              </div>
              

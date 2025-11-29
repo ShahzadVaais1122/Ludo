@@ -6,7 +6,6 @@ interface DiceProps {
   rolling: boolean;
   onRoll: () => void;
   disabled: boolean;
-  color: string;
   skinData?: DiceSkin; // Optional, falls back to default if missing
 }
 

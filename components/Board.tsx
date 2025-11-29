@@ -1,16 +1,25 @@
 import React from 'react';
-import { GameState, PlayerColor, Piece, Theme } from '../types';
+import { GameState, PlayerColor, Piece, Theme, DiceSkin } from '../types';
 import { getPieceCoordinates } from '../utils/gameLogic';
 import PieceComponent from './Piece';
+import Dice from './Dice';
 import { Star, ArrowRight, ArrowDown, ArrowLeft, ArrowUp } from 'lucide-react';
 
 interface BoardProps {
   gameState: GameState;
   onPieceClick: (pieceId: number) => void;
   theme: Theme;
+  diceValue: number;
+  isDiceRolling: boolean;
+  onDiceRoll: () => void;
+  isDiceDisabled: boolean;
+  diceSkin?: DiceSkin;
 }
 
-const Board: React.FC<BoardProps> = ({ gameState, onPieceClick, theme }) => {
+const Board: React.FC<BoardProps> = ({
+  gameState, onPieceClick, theme,
+  diceValue, isDiceRolling, onDiceRoll, isDiceDisabled, diceSkin
+}) => {
   
   const cells = [];
   
@@ -235,6 +244,18 @@ const Board: React.FC<BoardProps> = ({ gameState, onPieceClick, theme }) => {
             <div className="absolute top-0 left-0 w-full h-full border-r-2" 
                  style={{ backgroundColor: theme.palette[PlayerColor.RED], borderColor: theme.borderColor, clipPath: 'polygon(0 0, 0 100%, 50% 50%)' }}></div>
 
+            {/* DICE OVERLAY */}
+            <div className="absolute inset-0 flex items-center justify-center z-50">
+               <div className="scale-75 sm:scale-100">
+                  <Dice
+                      value={diceValue}
+                      rolling={isDiceRolling}
+                      onRoll={onDiceRoll}
+                      disabled={isDiceDisabled}
+                      skinData={diceSkin}
+                  />
+               </div>
+            </div>
         </div>
 
         {/* Pieces Layer */}

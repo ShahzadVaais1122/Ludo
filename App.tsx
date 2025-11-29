@@ -4,7 +4,7 @@ import Lobby from './screens/Lobby';
 import Board from './components/Board';
 import Dice from './components/Dice';
 import { canMovePiece, checkForKill, getBotMove } from './utils/gameLogic';
-import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, Users } from 'lucide-react';
+import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, Users, VolumeX } from 'lucide-react';
 import { DICE_SKINS } from './constants';
 
 declare const Peer: any; // Global from script tag
@@ -34,6 +34,10 @@ const App: React.FC = () => {
   const connectionsRef = useRef<any[]>([]); // For Host to talk to Clients
   const isHostRef = useRef<boolean>(false);
 
+  // AUDIO REFS
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const bgMusicRef = useRef<HTMLAudioElement | null>(null);
+
   const [gameState, setGameState] = useState<GameState>({
     status: GameStatus.LOBBY,
     roomCode: '',
@@ -50,6 +54,73 @@ const App: React.FC = () => {
     mode: 'AI',
     myId: 'p1'
   });
+
+  // --- AUDIO INITIALIZATION ---
+  useEffect(() => {
+    // 1. Setup Audio Context for SFX
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContext) {
+        audioContextRef.current = new AudioContext();
+    }
+
+    // 2. Setup Background Music
+    // Using a reliable royalty-free ambient track
+    const bgAudio = new Audio('https://cdn.pixabay.com/audio/2022/11/22/audio_febc508520.mp3'); 
+    bgAudio.loop = true;
+    bgAudio.volume = 0.25; // Keep it subtle
+    bgMusicRef.current = bgAudio;
+
+    // 3. Autoplay / Interaction Handler
+    const tryPlayMusic = () => {
+        if (musicEnabled && bgAudio.paused) {
+            bgAudio.play().catch((e) => {
+                // Autoplay was prevented
+                console.log("Waiting for user interaction to play music");
+            });
+        }
+        
+        // Also resume AudioContext if it was suspended (browser policy)
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+            audioContextRef.current.resume();
+        }
+    };
+
+    // Try immediately
+    if (musicEnabled) tryPlayMusic();
+
+    // Add global listeners to unlock audio on first interaction
+    const unlockAudio = () => {
+        tryPlayMusic();
+        // We don't remove immediately to ensure persistent attempts if first fails
+    };
+
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
+
+    return () => {
+        bgAudio.pause();
+        bgMusicRef.current = null;
+        document.removeEventListener('click', unlockAudio);
+        document.removeEventListener('touchstart', unlockAudio);
+        document.removeEventListener('keydown', unlockAudio);
+        if (audioContextRef.current) audioContextRef.current.close();
+    };
+  }, []);
+
+  // --- MUSIC TOGGLE EFFECT ---
+  useEffect(() => {
+      if (!bgMusicRef.current) return;
+      
+      if (musicEnabled) {
+          if (bgMusicRef.current.paused) {
+              bgMusicRef.current.play().catch(e => console.warn("Interaction needed for music"));
+          }
+      } else {
+          bgMusicRef.current.pause();
+      }
+  }, [musicEnabled]);
+
 
   // --- NETWORKING FUNCTIONS ---
 
@@ -71,7 +142,17 @@ const App: React.FC = () => {
       });
   };
 
-  const handleCreateOnlineGame = async (playerName: string) => {
+  const getPeerConfig = () => ({
+    debug: 1,
+    config: {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
+    }
+  });
+
+  const handleCreateOnlineGame = async (playerName: string, avatar: string) => {
       cleanupPeer();
       isHostRef.current = true;
       
@@ -80,10 +161,13 @@ const App: React.FC = () => {
       const peerId = `LUDO_PRO_${code}`; 
 
       return new Promise<void>((resolve, reject) => {
-          const peer = new Peer(peerId, { debug: 1 });
+          const peer = new Peer(peerId, getPeerConfig());
           
           peer.on('open', (id: string) => {
               console.log('Host Open:', id);
+              // Save session for recovery (though host recovery is harder without ID persistence)
+              sessionStorage.setItem('ludo_last_room', code);
+
               // Init Host State
               const hostPlayer = {
                   id: `host_${Date.now()}`,
@@ -91,7 +175,7 @@ const App: React.FC = () => {
                   isBot: false,
                   color: PlayerColor.RED,
                   pieces: INITIAL_PIECES(PlayerColor.RED),
-                  avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${playerName}`,
+                  avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${avatar}`,
                   hasWon: false,
                   rank: 0,
                   diceSkin: selectedSkinId
@@ -132,7 +216,7 @@ const App: React.FC = () => {
                               isBot: false,
                               color: nextColor,
                               pieces: INITIAL_PIECES(nextColor),
-                              avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.playerName}`,
+                              avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.avatar}`,
                               hasWon: false,
                               rank: 0,
                               diceSkin: 'default' // Default for guests
@@ -147,8 +231,6 @@ const App: React.FC = () => {
                           // Send Full State to EVERYONE including new player
                           setTimeout(() => {
                               // We use the ref version of broadcast inside the callback
-                              // But here we can just execute syncStateToClients with newState
-                              // However, sync relies on `connectionsRef` which we just updated.
                               const payload = { type: 'SYNC_STATE', state: newState };
                               connectionsRef.current.forEach(c => c.open && c.send(payload));
                           }, 100);
@@ -162,9 +244,7 @@ const App: React.FC = () => {
               });
 
               conn.on('close', () => {
-                   // Handle disconnect? For now just ignore or remove player
-                   // Removing players mid-game is tricky in Ludo, usually replaced by Bot
-                   // We will skip complex reconnection logic for this MVP
+                   // Handle disconnect
               });
           });
 
@@ -175,28 +255,41 @@ const App: React.FC = () => {
       });
   };
 
-  const handleJoinOnlineGame = async (code: string, playerName: string) => {
+  const handleJoinOnlineGame = async (code: string, playerName: string, avatar: string) => {
       cleanupPeer();
       isHostRef.current = false;
       const peerId = `LUDO_PRO_${code}`;
 
       return new Promise<boolean>((resolve, reject) => {
-          const peer = new Peer({ debug: 1 }); // Auto generated ID for client
+          const peer = new Peer(getPeerConfig()); // Auto generated ID for client with STUN config
           
           peer.on('open', () => {
               const conn = peer.connect(peerId);
               
+              // Helper to reject if connection takes too long
+              const connectionTimeout = setTimeout(() => {
+                  if (!conn.open) {
+                      reject(new Error("Room not found or timed out."));
+                      conn.close();
+                  }
+              }, 10000); // 10s timeout for mobile networks
+
               conn.on('open', () => {
+                  clearTimeout(connectionTimeout);
                   console.log('Connected to Host');
                   connRef.current = conn;
                   peerRef.current = peer;
                   
+                  // Save session for auto-rejoin
+                  sessionStorage.setItem('ludo_last_room', code);
+
                   // Send Join Request
                   const myId = `player_${Date.now()}`;
                   conn.send({
                       type: 'JOIN_REQUEST',
                       playerId: myId,
-                      playerName: playerName
+                      playerName: playerName,
+                      avatar: avatar
                   });
                   
                   // Optimistic update of ID
@@ -212,21 +305,31 @@ const App: React.FC = () => {
                           myId: prev.myId // Keep my ID
                       }));
                   } else if (data.type === 'ERROR') {
+                      sessionStorage.removeItem('ludo_last_room');
                       reject(new Error(data.message));
                   }
               });
-              
-              // Error handling for connection failure
-              setTimeout(() => {
-                  if (!conn.open) {
-                      reject(new Error("Room not found or timed out"));
-                  }
-              }, 5000);
+
+              conn.on('close', () => {
+                  // Host disconnected or network failed
+                  console.log("Connection closed.");
+                  setGameState(prev => ({...prev, status: GameStatus.LOBBY, roomCode: '', players: [], logs: [...prev.logs, "Disconnected from host"]}));
+              });
+
+              conn.on('error', (err: any) => {
+                  clearTimeout(connectionTimeout);
+                  reject(err);
+              });
           });
 
           peer.on('error', (err: any) => {
-              console.error(err);
-              resolve(false);
+              console.error("Peer Error:", err);
+              // Specific error for ID not found
+              if (err.type === 'peer-unavailable') {
+                  reject(new Error("Room not found. Check code."));
+              } else {
+                  reject(err);
+              }
           });
       });
   };
@@ -501,7 +604,7 @@ const App: React.FC = () => {
       name: p.name,
       isBot: p.isBot,
       color: colors[idx],
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name}`,
+      avatarUrl: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name}`,
       pieces: INITIAL_PIECES(colors[idx]),
       hasWon: false,
       rank: 0,
@@ -567,9 +670,13 @@ const App: React.FC = () => {
   const playSound = (type: 'roll' | 'move' | 'kill' | 'win') => {
     if (!soundEnabled) return;
     try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
+        // Use persistent context
+        const ctx = audioContextRef.current;
+        if (!ctx) return;
+        
+        // Ensure context is running (it might suspend on inactivity)
+        if (ctx.state === 'suspended') ctx.resume();
+
         const osc = ctx.createOscillator();
         const gainNode = ctx.createGain();
         osc.connect(gainNode);
@@ -633,7 +740,7 @@ const App: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 bg-white/5 rounded-2xl border border-white/5">
                <div className="flex items-center gap-3">
-                  <Volume2 className={soundEnabled ? "text-green-400" : "text-slate-500"} size={20} />
+                  {soundEnabled ? <Volume2 className="text-green-400" size={20} /> : <VolumeX className="text-slate-500" size={20} />}
                   <span className="font-bold text-slate-200">Sound Effects</span>
                </div>
                <button onClick={() => setSoundEnabled(!soundEnabled)} className={`w-12 h-6 rounded-full relative transition-colors ${soundEnabled ? 'bg-green-500' : 'bg-slate-700'}`}>
@@ -642,7 +749,7 @@ const App: React.FC = () => {
             </div>
             <div className="flex items-center justify-between p-3 bg-white/5 rounded-2xl border border-white/5">
                <div className="flex items-center gap-3">
-                  <Music className={musicEnabled ? "text-purple-400" : "text-slate-500"} size={20} />
+                  {musicEnabled ? <Music className="text-purple-400" size={20} /> : <div className="relative"><Music className="text-slate-500 opacity-50" size={20} /><div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-400 -rotate-45"></div></div>}
                   <span className="font-bold text-slate-200">Music</span>
                </div>
                <button onClick={() => setMusicEnabled(!musicEnabled)} className={`w-12 h-6 rounded-full relative transition-colors ${musicEnabled ? 'bg-purple-500' : 'bg-slate-700'}`}>
@@ -682,6 +789,9 @@ const App: React.FC = () => {
             onBuySkin={handleBuySkin}
             onEquipSkin={handleEquipSkin}
             
+            difficulty={difficulty}
+            onDifficultyChange={setDifficulty}
+
             isOnlineConnected={!!gameState.roomCode}
             onlineRoomCode={gameState.roomCode}
             onlinePlayers={gameState.players}
@@ -706,8 +816,11 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3">
            <button className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition backdrop-blur-md" 
                 onClick={() => {
-                   // If leaving online game, cleanup
-                   if (gameState.mode === 'ONLINE') cleanupPeer();
+                   // Manual exit: clear session and clean up
+                   if (gameState.mode === 'ONLINE') {
+                       sessionStorage.removeItem('ludo_last_room');
+                       cleanupPeer();
+                   }
                    setGameState(p => ({...p, status: GameStatus.LOBBY, roomCode: '', players: []}));
                 }}>
               <Home size={20} className="text-white" />

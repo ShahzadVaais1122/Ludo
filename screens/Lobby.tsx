@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, AlertCircle, Info, RefreshCw, XCircle, Brain } from 'lucide-react';
-import { DICE_SKINS } from '../constants';
-import { Difficulty } from '../types';
+import { Users, Cpu, Play, ShoppingCart, Coins, Check, Sparkles, Globe, Loader2, Copy, AlertCircle, Info, RefreshCw, XCircle, Brain, Palette } from 'lucide-react';
+import { DICE_SKINS, THEMES } from '../constants';
+import { Difficulty, Theme, PlayerColor } from '../types';
 
 const AVATAR_SEEDS = ['Felix', 'Aneka', 'Zac', 'Milo', 'Buster', 'Bella', 'Joe', 'Lily', 'King', 'Queen'];
 
@@ -17,6 +17,10 @@ interface LobbyProps {
   difficulty: Difficulty;
   onDifficultyChange: (diff: Difficulty) => void;
 
+  // Theme Control
+  currentTheme: Theme;
+  onThemeChange: (themeId: string) => void;
+
   // Online Props
   isOnlineConnected: boolean;
   onlineRoomCode: string;
@@ -31,6 +35,7 @@ interface LobbyProps {
 const Lobby: React.FC<LobbyProps> = ({ 
     onStartGame, balance, ownedSkins, selectedSkin, onBuySkin, onEquipSkin,
     difficulty, onDifficultyChange,
+    currentTheme, onThemeChange,
     isOnlineConnected, onlineRoomCode, onlinePlayers, onlineMyId, onJoinOnline, onCreateOnline, onStartOnlineMatch, isHost
 }) => {
   const [playerName, setPlayerName] = useState(() => sessionStorage.getItem('ludo_player_name') || 'Player 1');
@@ -144,7 +149,7 @@ const Lobby: React.FC<LobbyProps> = ({
         }
         onStartGame('AI', players, undefined, 'p1');
     } else if (mode === 'LOCAL') {
-        players.push({ name: 'Player 1', isBot: false, id: 'p1', avatar: avatarUrl });
+        players.push({ name: playerName || 'Player 1', isBot: false, id: 'p1', avatar: avatarUrl });
         players.push({ name: 'Player 2', isBot: false, id: 'p2' });
         if (playerCount >= 3) players.push({ name: 'Player 3', isBot: false, id: 'p3' });
         if (playerCount === 4) players.push({ name: 'Player 4', isBot: false, id: 'p4' });
@@ -233,6 +238,37 @@ const Lobby: React.FC<LobbyProps> = ({
                                 )}
                             </button>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Theme Selector */}
+                {!isOnlineConnected && (
+                    <div className="mb-6">
+                        <label className="text-xs font-bold text-indigo-300 ml-2 uppercase tracking-wide flex items-center gap-1"><Palette size={12}/> Board Theme</label>
+                        <div className="flex gap-3 overflow-x-auto pb-2 pt-2 px-1 scrollbar-hide">
+                            {THEMES.map(theme => {
+                                const isSelected = currentTheme.id === theme.id;
+                                return (
+                                    <button
+                                        key={theme.id}
+                                        onClick={() => onThemeChange(theme.id)}
+                                        className={`flex flex-col items-center gap-2 min-w-[80px] p-2 rounded-xl transition-all border ${isSelected ? 'bg-white/10 border-indigo-400 scale-105' : 'bg-black/20 border-white/5 hover:bg-white/5'}`}
+                                    >
+                                        <div 
+                                            className="w-12 h-12 rounded-lg shadow-inner flex flex-wrap p-1 gap-0.5 justify-center content-center border"
+                                            style={{ backgroundColor: theme.boardBaseColor, borderColor: theme.borderColor }}
+                                        >
+                                            {/* Mini Preview of Colors */}
+                                            <div className="w-2 h-2 rounded-full" style={{backgroundColor: theme.palette[PlayerColor.RED]}}></div>
+                                            <div className="w-2 h-2 rounded-full" style={{backgroundColor: theme.palette[PlayerColor.GREEN]}}></div>
+                                            <div className="w-2 h-2 rounded-full" style={{backgroundColor: theme.palette[PlayerColor.BLUE]}}></div>
+                                            <div className="w-2 h-2 rounded-full" style={{backgroundColor: theme.palette[PlayerColor.YELLOW]}}></div>
+                                        </div>
+                                        <span className={`text-[10px] font-bold ${isSelected ? 'text-white' : 'text-slate-400'}`}>{theme.name}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 )}

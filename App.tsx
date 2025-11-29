@@ -5,7 +5,7 @@ import Board from './components/Board';
 import Dice from './components/Dice';
 import { canMovePiece, checkForKill, getBotMove } from './utils/gameLogic';
 import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, Users, VolumeX } from 'lucide-react';
-import { DICE_SKINS } from './constants';
+import { DICE_SKINS, THEMES } from './constants';
 
 declare const Peer: any; // Global from script tag
 
@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.MEDIUM);
+  const [currentThemeId, setCurrentThemeId] = useState('classic');
   const [showSettings, setShowSettings] = useState(false);
 
   // NETWORKING REFS
@@ -37,6 +38,9 @@ const App: React.FC = () => {
   // AUDIO REFS
   const audioContextRef = useRef<AudioContext | null>(null);
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
+
+  // ANIMATION REFS
+  const moveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [gameState, setGameState] = useState<GameState>({
     status: GameStatus.LOBBY,
@@ -55,6 +59,8 @@ const App: React.FC = () => {
     myId: 'p1'
   });
 
+  const currentTheme = THEMES.find(t => t.id === currentThemeId) || THEMES[0];
+
   // --- AUDIO INITIALIZATION ---
   useEffect(() => {
     // 1. Setup Audio Context for SFX
@@ -64,34 +70,28 @@ const App: React.FC = () => {
     }
 
     // 2. Setup Background Music
-    // Using a reliable royalty-free ambient track
     const bgAudio = new Audio('https://cdn.pixabay.com/audio/2022/11/22/audio_febc508520.mp3'); 
     bgAudio.loop = true;
-    bgAudio.volume = 0.25; // Keep it subtle
+    bgAudio.volume = 0.25; 
     bgMusicRef.current = bgAudio;
 
     // 3. Autoplay / Interaction Handler
     const tryPlayMusic = () => {
         if (musicEnabled && bgAudio.paused) {
             bgAudio.play().catch((e) => {
-                // Autoplay was prevented
                 console.log("Waiting for user interaction to play music");
             });
         }
         
-        // Also resume AudioContext if it was suspended (browser policy)
         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
             audioContextRef.current.resume();
         }
     };
 
-    // Try immediately
     if (musicEnabled) tryPlayMusic();
 
-    // Add global listeners to unlock audio on first interaction
     const unlockAudio = () => {
         tryPlayMusic();
-        // We don't remove immediately to ensure persistent attempts if first fails
     };
 
     document.addEventListener('click', unlockAudio);
@@ -111,7 +111,6 @@ const App: React.FC = () => {
   // --- MUSIC TOGGLE EFFECT ---
   useEffect(() => {
       if (!bgMusicRef.current) return;
-      
       if (musicEnabled) {
           if (bgMusicRef.current.paused) {
               bgMusicRef.current.play().catch(e => console.warn("Interaction needed for music"));
@@ -120,6 +119,13 @@ const App: React.FC = () => {
           bgMusicRef.current.pause();
       }
   }, [musicEnabled]);
+
+  // --- CLEANUP INTERVAL ON UNMOUNT ---
+  useEffect(() => {
+    return () => {
+        if (moveIntervalRef.current) clearInterval(moveIntervalRef.current);
+    }
+  }, []);
 
 
   // --- NETWORKING FUNCTIONS ---
@@ -157,7 +163,6 @@ const App: React.FC = () => {
       isHostRef.current = true;
       
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      // Prefix to avoid collisions on public peerjs server
       const peerId = `LUDO_PRO_${code}`; 
 
       return new Promise<void>((resolve, reject) => {
@@ -165,10 +170,8 @@ const App: React.FC = () => {
           
           peer.on('open', (id: string) => {
               console.log('Host Open:', id);
-              // Save session for recovery (though host recovery is harder without ID persistence)
               sessionStorage.setItem('ludo_last_room', code);
 
-              // Init Host State
               const hostPlayer = {
                   id: `host_${Date.now()}`,
                   name: playerName,
@@ -196,11 +199,8 @@ const App: React.FC = () => {
           });
 
           peer.on('connection', (conn: any) => {
-              console.log('Host received connection');
-              
               conn.on('data', (data: any) => {
                   if (data.type === 'JOIN_REQUEST') {
-                      // Add Player
                       setGameState(currentState => {
                           if (currentState.players.length >= 4) {
                               conn.send({ type: 'ERROR', message: 'Room Full' });
@@ -219,18 +219,15 @@ const App: React.FC = () => {
                               avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.avatar}`,
                               hasWon: false,
                               rank: 0,
-                              diceSkin: 'default' // Default for guests
+                              diceSkin: 'default' 
                           };
                           
                           const newPlayers = [...currentState.players, newPlayer];
                           const newState = { ...currentState, players: newPlayers };
                           
-                          // Accept connection
                           connectionsRef.current.push(conn);
                           
-                          // Send Full State to EVERYONE including new player
                           setTimeout(() => {
-                              // We use the ref version of broadcast inside the callback
                               const payload = { type: 'SYNC_STATE', state: newState };
                               connectionsRef.current.forEach(c => c.open && c.send(payload));
                           }, 100);
@@ -241,10 +238,6 @@ const App: React.FC = () => {
                   else if (data.type === 'ACTION') {
                        handleRemoteAction(data);
                   }
-              });
-
-              conn.on('close', () => {
-                   // Handle disconnect
               });
           });
 
@@ -261,29 +254,24 @@ const App: React.FC = () => {
       const peerId = `LUDO_PRO_${code}`;
 
       return new Promise<boolean>((resolve, reject) => {
-          const peer = new Peer(getPeerConfig()); // Auto generated ID for client with STUN config
+          const peer = new Peer(getPeerConfig()); 
           
           peer.on('open', () => {
               const conn = peer.connect(peerId);
               
-              // Helper to reject if connection takes too long
               const connectionTimeout = setTimeout(() => {
                   if (!conn.open) {
                       reject(new Error("Room not found or timed out."));
                       conn.close();
                   }
-              }, 10000); // 10s timeout for mobile networks
+              }, 10000); 
 
               conn.on('open', () => {
                   clearTimeout(connectionTimeout);
-                  console.log('Connected to Host');
                   connRef.current = conn;
                   peerRef.current = peer;
-                  
-                  // Save session for auto-rejoin
                   sessionStorage.setItem('ludo_last_room', code);
 
-                  // Send Join Request
                   const myId = `player_${Date.now()}`;
                   conn.send({
                       type: 'JOIN_REQUEST',
@@ -292,17 +280,15 @@ const App: React.FC = () => {
                       avatar: avatar
                   });
                   
-                  // Optimistic update of ID
                   setGameState(prev => ({ ...prev, myId, mode: 'ONLINE', roomCode: code }));
                   resolve(true);
               });
 
               conn.on('data', (data: any) => {
                   if (data.type === 'SYNC_STATE') {
-                      // Replace local state with host state
                       setGameState(prev => ({
                           ...data.state,
-                          myId: prev.myId // Keep my ID
+                          myId: prev.myId 
                       }));
                   } else if (data.type === 'ERROR') {
                       sessionStorage.removeItem('ludo_last_room');
@@ -311,8 +297,6 @@ const App: React.FC = () => {
               });
 
               conn.on('close', () => {
-                  // Host disconnected or network failed
-                  console.log("Connection closed.");
                   setGameState(prev => ({...prev, status: GameStatus.LOBBY, roomCode: '', players: [], logs: [...prev.logs, "Disconnected from host"]}));
               });
 
@@ -323,8 +307,6 @@ const App: React.FC = () => {
           });
 
           peer.on('error', (err: any) => {
-              console.error("Peer Error:", err);
-              // Specific error for ID not found
               if (err.type === 'peer-unavailable') {
                   reject(new Error("Room not found. Check code."));
               } else {
@@ -350,7 +332,6 @@ const App: React.FC = () => {
 
   // --- GAME LOGIC ---
 
-  // Central Hub for executing actions (Host Only runs this logic, Client just sends request)
   const handleRemoteAction = (data: any) => {
       if (!isHostRef.current) return;
       
@@ -362,31 +343,34 @@ const App: React.FC = () => {
   };
 
   const handleRollDice = (triggeringPlayerId?: string) => {
-    // Determine who is rolling
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     
-    // If Online Client: Send Request to Host
+    // Online Client Logic
     if (gameState.mode === 'ONLINE' && !isHostRef.current) {
-        if (currentPlayer.id !== gameState.myId) return; // Not my turn
+        if (currentPlayer.id !== gameState.myId) return; 
         connRef.current?.send({ type: 'ACTION', action: 'ROLL', playerId: gameState.myId });
         return;
     }
 
-    // If Host receiving request (or playing locally/AI)
+    // Permission Logic
     const actorId = triggeringPlayerId || gameState.myId;
     
-    // Validation: Is it this player's turn?
-    if (currentPlayer.id !== actorId && !currentPlayer.isBot) return; 
+    if (gameState.mode === 'LOCAL') {
+        // In Local Mode (Pass & Play), ignore identity check for humans.
+        // Only prevent humans from rolling if it is explicitly a Bot's turn
+        if (currentPlayer.isBot) return;
+    } else {
+        // In AI or ONLINE mode, strict identity check
+        if (currentPlayer.id !== actorId && !currentPlayer.isBot) return; 
+    }
 
     if (!gameState.canRoll || gameState.isDiceRolling) return;
 
-    // 1. Start Visuals (Update State)
     const stateWithRollAnim = { ...gameState, isDiceRolling: true, canRoll: false };
     setGameState(stateWithRollAnim);
     playSound('roll');
     if (isHostRef.current) syncStateToClients(stateWithRollAnim);
 
-    // 2. Resolve Roll (Delayed)
     setTimeout(() => {
       const rolledValue = Math.floor(Math.random() * 6) + 1;
       applyRollResult(rolledValue);
@@ -404,7 +388,6 @@ const App: React.FC = () => {
 
         let newState: GameState;
 
-        // Rule: 3 Consecutive Sixes
         if (newConsecutiveSixes === 3) {
             logs.push(`${currentPlayer.name} rolled three 6s! Turn forfeited.`);
             newState = {
@@ -418,7 +401,6 @@ const App: React.FC = () => {
                 consecutiveSixes: 0 
             };
         } else {
-            // Calculate valid moves
             const validPieceIds: number[] = [];
             currentPlayer.pieces.forEach(p => {
               if (canMovePiece(p, rolledValue, prev.players)) validPieceIds.push(p.id);
@@ -452,15 +434,13 @@ const App: React.FC = () => {
             }
         }
         
-        // Sync if Host
         if (isHostRef.current) syncStateToClients(newState);
         return newState;
       });
   }
 
-  // Effect for Auto-Pass Turn (Need to handle carefully with async state)
+  // Effect for Auto-Pass Turn
   useEffect(() => {
-    // Only Host (or Local/AI) runs this check
     if (gameState.mode === 'ONLINE' && !isHostRef.current) return;
 
     if (!gameState.isDiceRolling && !gameState.canRoll && !gameState.waitingForMove && gameState.status === GameStatus.PLAYING) {
@@ -472,66 +452,123 @@ const App: React.FC = () => {
   const handlePieceClick = (pieceId: number, triggeringPlayerId?: string) => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     
-    // If Online Client
+    // Online Client Logic
     if (gameState.mode === 'ONLINE' && !isHostRef.current) {
         if (currentPlayer.id !== gameState.myId) return; 
         connRef.current?.send({ type: 'ACTION', action: 'MOVE', pieceId, playerId: gameState.myId });
         return;
     }
 
-    // If Host/Local
+    // Permission Logic
     const actorId = triggeringPlayerId || gameState.myId;
-    if (currentPlayer.id !== actorId && !currentPlayer.isBot) return;
+    
+    if (gameState.mode === 'LOCAL') {
+         // In Local Mode (Pass & Play), humans can interact for any human player
+         if (currentPlayer.isBot) return;
+    } else {
+         // In AI or ONLINE mode, strict identity check
+         if (currentPlayer.id !== actorId && !currentPlayer.isBot) return;
+    }
+
     if (!gameState.waitingForMove) return;
 
-    applyMoveResult(pieceId);
+    // Trigger Animation instead of instant move
+    movePieceStepByStep(pieceId, gameState.diceValue);
   };
 
-  const applyMoveResult = (pieceId: number) => {
+  const movePieceStepByStep = (pieceId: number, totalSteps: number) => {
+    // Lock UI
+    setGameState(prev => ({...prev, waitingForMove: false}));
+    
+    const player = gameState.players[gameState.currentTurnIndex];
+    const piece = player.pieces.find(p => p.id === pieceId);
+    
+    if (!piece) return;
+
+    // Deployment is instant (no walking animation)
+    if (piece.position === -1) {
+        finalizeMove(pieceId, true);
+        return;
+    }
+
+    let currentSteps = 0;
+    
+    if (moveIntervalRef.current) clearInterval(moveIntervalRef.current);
+
+    moveIntervalRef.current = setInterval(() => {
+        currentSteps++;
+        playSound('move');
+        
+        setGameState(prev => {
+            // Deep copy for mutation safety
+            const newPlayers = prev.players.map(p => {
+                if (p.id !== player.id) return p;
+                return {
+                    ...p,
+                    pieces: p.pieces.map(pc => {
+                        if (pc.id !== pieceId) return pc;
+                        return { ...pc, position: pc.position + 1 };
+                    })
+                };
+            });
+            
+            const newState = { ...prev, players: newPlayers };
+            if (isHostRef.current) syncStateToClients(newState);
+            return newState;
+        });
+
+        if (currentSteps >= totalSteps) {
+            if (moveIntervalRef.current) clearInterval(moveIntervalRef.current);
+            moveIntervalRef.current = null;
+            // Short delay to let the final visual step settle before running game rules
+            setTimeout(() => finalizeMove(pieceId, false), 250);
+        }
+    }, 250); // Speed of animation (matched with CSS transition)
+  };
+
+  const finalizeMove = (pieceId: number, wasDeployment: boolean) => {
     setGameState(prev => {
       const currentPlayerIndex = prev.currentTurnIndex;
       const currentPlayer = prev.players[currentPlayerIndex];
-      const newPlayers = [...prev.players];
-      const playerToUpdate = { ...newPlayers[currentPlayerIndex] };
       
-      const pieceToUpdate = playerToUpdate.pieces.find(p => p.id === pieceId);
-      if (!pieceToUpdate) return prev; 
-
-      // Logic
-      let moveDistance = prev.diceValue;
+      // Deep copy needed for checkForKill mutation
+      const newPlayers = JSON.parse(JSON.stringify(prev.players));
+      const playerToUpdate = newPlayers[currentPlayerIndex];
+      const pieceToUpdate = playerToUpdate.pieces.find((p: any) => p.id === pieceId);
+      
       let newLogs = [...prev.logs];
 
-      if (pieceToUpdate.position === -1) {
+      if (wasDeployment) {
         pieceToUpdate.position = 0; 
         newLogs.push(`${currentPlayer.name} deployed a piece!`);
-      } else {
-        pieceToUpdate.position += moveDistance;
+        playSound('move');
       }
-      
-      // Kill Check
-      const { killed, logs: killLogs } = checkForKill(pieceToUpdate, prev, currentPlayer.id);
+
+      // Check for Kill
+      // We pass the temp state because checking for kill needs to know current board layout
+      const tempStateForLogic = { ...prev, players: newPlayers };
+      const { killed, logs: killLogs } = checkForKill(pieceToUpdate, tempStateForLogic, currentPlayer.id);
       newLogs = [...newLogs, ...killLogs];
+      
       if (killed) {
         playSound('kill');
         if (!currentPlayer.isBot) setBalance(b => b + 100);
       } else {
-        playSound('move');
+        // If not a kill and not deployment, we already played step sounds. 
+        // Maybe play a land sound? For now, silence is fine or reuse move.
       }
-
-      playerToUpdate.pieces = playerToUpdate.pieces.map(p => p.id === pieceId ? pieceToUpdate : p);
-      newPlayers[currentPlayerIndex] = playerToUpdate;
 
       // Win Check
       let pieceFinished = false;
-      if (pieceToUpdate.position === 99 || pieceToUpdate.position === 56) {
-          if (pieceToUpdate.position === 56) pieceToUpdate.position = 99;
+      if (pieceToUpdate.position === 56 || pieceToUpdate.position === 99) {
+          pieceToUpdate.position = 99;
           pieceFinished = true;
           playSound('win');
           newLogs.push(`${currentPlayer.name}'s piece reached Home!`);
           if (!currentPlayer.isBot) setBalance(b => b + 500); 
       }
       
-      const allHome = playerToUpdate.pieces.every(p => p.position === 99);
+      const allHome = playerToUpdate.pieces.every((p: any) => p.position === 99);
       let winners = [...prev.winners];
       
       if (allHome && !playerToUpdate.hasWon) {
@@ -591,7 +628,6 @@ const App: React.FC = () => {
 
   // --- LOCAL INIT ---
   const initLocalGame = (mode: 'LOCAL' | 'AI' | 'ONLINE', initialPlayers: any[], roomCode?: string, myId?: string) => {
-    // This is for LOCAL/AI start. ONLINE start is handled by handleStartOnlineMatch
     let colors: PlayerColor[] = [];
     if (initialPlayers.length === 2) {
         colors = [PlayerColor.RED, PlayerColor.YELLOW];
@@ -632,7 +668,7 @@ const App: React.FC = () => {
   // --- BOT EFFECT ---
   useEffect(() => {
     if (gameState.status !== GameStatus.PLAYING) return;
-    if (gameState.mode === 'ONLINE') return; // Bots not supported in online for now
+    if (gameState.mode === 'ONLINE') return; 
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     
@@ -670,11 +706,8 @@ const App: React.FC = () => {
   const playSound = (type: 'roll' | 'move' | 'kill' | 'win') => {
     if (!soundEnabled) return;
     try {
-        // Use persistent context
         const ctx = audioContextRef.current;
         if (!ctx) return;
-        
-        // Ensure context is running (it might suspend on inactivity)
         if (ctx.state === 'suspended') ctx.resume();
 
         const osc = ctx.createOscillator();
@@ -792,6 +825,9 @@ const App: React.FC = () => {
             difficulty={difficulty}
             onDifficultyChange={setDifficulty}
 
+            currentTheme={currentTheme}
+            onThemeChange={setCurrentThemeId}
+
             isOnlineConnected={!!gameState.roomCode}
             onlineRoomCode={gameState.roomCode}
             onlinePlayers={gameState.players}
@@ -816,7 +852,6 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3">
            <button className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition backdrop-blur-md" 
                 onClick={() => {
-                   // Manual exit: clear session and clean up
                    if (gameState.mode === 'ONLINE') {
                        sessionStorage.removeItem('ludo_last_room');
                        cleanupPeer();
@@ -873,7 +908,7 @@ const App: React.FC = () => {
         {/* Center: Board */}
         <div className="order-1 md:order-2 flex-1 flex items-center justify-center p-2 md:p-4 relative overflow-visible md:overflow-hidden flex-shrink-0">
              <div className="absolute w-[90%] aspect-square bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none"></div>
-             <Board gameState={gameState} onPieceClick={(id) => handlePieceClick(id)} />
+             <Board gameState={gameState} onPieceClick={(id) => handlePieceClick(id)} theme={currentTheme} />
              {gameState.status === GameStatus.FINISHED && (
                 <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-8 backdrop-blur-md animate-[fadeIn_0.5s]">
                    <Trophy size={100} className="text-yellow-400 mb-6 animate-bounce drop-shadow-[0_0_20px_rgba(250,204,21,0.5)]"/>
@@ -901,15 +936,15 @@ const App: React.FC = () => {
         <div className="order-2 md:order-3 w-full md:w-72 glass-panel border-l border-white/5 p-4 md:p-6 flex flex-row md:flex-col items-center justify-between md:justify-center gap-4 md:gap-6 z-20 flex-shrink-0">
              <div className="text-left md:text-center w-full">
                 <p className="text-indigo-300 text-[10px] uppercase tracking-[0.2em] mb-1 font-bold">Current Turn</p>
-                <h2 className={`text-lg sm:text-2xl font-black drop-shadow-md tracking-wider truncate ${currentPlayer.color === 'RED' ? 'text-red-500' : currentPlayer.color === 'GREEN' ? 'text-green-400' : currentPlayer.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-400'}`}>
+                <h2 className="text-lg sm:text-2xl font-black drop-shadow-md tracking-wider truncate" style={{color: currentTheme.palette[currentPlayer.color]}}>
                     {currentPlayer.name}
                 </h2>
-                <div className={`h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full ${currentPlayer.color === 'RED' ? 'bg-red-500' : currentPlayer.color === 'GREEN' ? 'bg-green-500' : currentPlayer.color === 'YELLOW' ? 'bg-yellow-400' : 'bg-blue-400'} shadow-[0_0_10px_currentColor]`}></div>
+                <div className="h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full shadow-[0_0_10px_currentColor]" style={{backgroundColor: currentTheme.palette[currentPlayer.color], color: currentTheme.palette[currentPlayer.color]}}></div>
              </div>
 
              <div className="flex-1 flex items-center justify-end md:justify-center w-full my-0 md:my-4">
                  <div className="relative">
-                    <div className={`absolute inset-0 blur-2xl opacity-40 transition-colors duration-500 ${currentPlayer.color === 'RED' ? 'bg-red-500' : currentPlayer.color === 'GREEN' ? 'bg-green-500' : currentPlayer.color === 'YELLOW' ? 'bg-yellow-400' : 'bg-blue-500'}`}></div>
+                    <div className="absolute inset-0 blur-2xl opacity-40 transition-colors duration-500" style={{backgroundColor: currentTheme.palette[currentPlayer.color]}}></div>
                     <Dice 
                         value={gameState.diceValue} 
                         rolling={gameState.isDiceRolling} 
@@ -920,7 +955,7 @@ const App: React.FC = () => {
                             (currentPlayer.isBot && gameState.status === GameStatus.PLAYING) || 
                             (gameState.mode === 'ONLINE' && currentPlayer.id !== gameState.myId)
                         }
-                        color={currentPlayer.color === 'RED' ? 'text-red-500' : currentPlayer.color === 'GREEN' ? 'text-green-500' : currentPlayer.color === 'YELLOW' ? 'text-yellow-400' : 'text-blue-500'}
+                        color={`text-[${currentTheme.palette[currentPlayer.color]}]`}
                         skinData={currentSkinData}
                     />
                  </div>

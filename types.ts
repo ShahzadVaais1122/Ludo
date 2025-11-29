@@ -45,6 +45,15 @@ export interface Player {
   diceSkin: string; // ID of the equipped skin
 }
 
+export interface Theme {
+  id: string;
+  name: string;
+  palette: Record<PlayerColor, string>;
+  boardBaseColor: string; // The white grid background
+  borderColor: string;
+  safeSpotColor: string; // Color for the star icon
+}
+
 export interface GameState {
   status: GameStatus;
   roomCode: string;

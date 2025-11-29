@@ -6,11 +6,10 @@ interface DiceProps {
   rolling: boolean;
   onRoll: () => void;
   disabled: boolean;
-  color: string;
   skinData?: DiceSkin; // Optional, falls back to default if missing
 }
 
-const Dice: React.FC<DiceProps> = ({ value, rolling, onRoll, disabled, color, skinData }) => {
+const Dice: React.FC<DiceProps> = ({ value, rolling, onRoll, disabled, skinData }) => {
   const [displayValue, setDisplayValue] = useState(1);
 
   // Default skin fallback
@@ -52,17 +51,20 @@ const Dice: React.FC<DiceProps> = ({ value, rolling, onRoll, disabled, color, sk
   };
 
   return (
-    <div className="relative flex flex-col items-center z-20">
+    <div className="relative flex flex-col items-center z-20 pointer-events-auto">
       <button 
         onClick={onRoll} 
         disabled={disabled || rolling}
-        className={`w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl shadow-[0_6px_0_rgb(0,0,0,0.2)] sm:shadow-[0_10px_0_rgb(0,0,0,0.2)] border-2 sm:border-4 relative transition-all active:shadow-none active:translate-y-2 ${rolling ? 'animate-roll' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:-translate-y-1'} ${skin.colorClass}`}
+        className={`w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl shadow-[0_6px_0_rgb(0,0,0,0.2)] sm:shadow-[0_10px_0_rgb(0,0,0,0.2)] border-2 sm:border-4 relative transition-all duration-300 active:shadow-none active:translate-y-2 ${rolling ? 'animate-spin' : ''} ${disabled ? 'opacity-80 scale-90 cursor-not-allowed grayscale' : 'cursor-pointer hover:-translate-y-1 scale-100 hover:scale-105'} ${skin.colorClass}`}
+        style={rolling ? { animation: 'spin 0.5s linear infinite' } : {}}
       >
         {renderDots(displayValue)}
       </button>
-      <div className={`mt-2 sm:mt-4 font-bold text-xs sm:text-sm md:text-lg ${color} drop-shadow-sm whitespace-nowrap`}>
-        {rolling ? 'Rolling...' : disabled ? 'Wait' : 'TAP TO ROLL'}
-      </div>
+      {!disabled && !rolling && (
+         <div className="absolute -bottom-8 animate-bounce font-bold text-[10px] sm:text-xs text-white bg-black/50 px-2 py-1 rounded-full whitespace-nowrap backdrop-blur-sm pointer-events-none">
+            TAP TO ROLL
+         </div>
+      )}
     </div>
   );
 };

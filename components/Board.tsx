@@ -234,6 +234,7 @@ const Board: React.FC<BoardProps> = ({ gameState, onPieceClick, theme }) => {
             {/* Left (Red) */}
             <div className="absolute top-0 left-0 w-full h-full border-r-2" 
                  style={{ backgroundColor: theme.palette[PlayerColor.RED], borderColor: theme.borderColor, clipPath: 'polygon(0 0, 0 100%, 50% 50%)' }}></div>
+
         </div>
 
         {/* Pieces Layer */}

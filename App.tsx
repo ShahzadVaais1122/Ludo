@@ -878,7 +878,7 @@ const App: React.FC = () => {
             isOnlineConnected={!!gameState.roomCode}
             onlineRoomCode={gameState.roomCode}
             onlinePlayers={gameState.players}
-            onlineMyId={gameState.myId}
+            onlineMyId={gameState.myId || ''}
             onJoinOnline={handleJoinOnlineGame}
             onCreateOnline={handleCreateOnlineGame}
             onStartOnlineMatch={handleStartOnlineMatch}

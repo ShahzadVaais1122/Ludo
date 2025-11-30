@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GameState, GameStatus, Player, PlayerColor, Piece, Difficulty } from './types';
 import Lobby from './screens/Lobby';
 import Board from './components/Board';
-// Dice is now used inside Board
+import Dice from './components/Dice';
 import { canMovePiece, checkForKill, getBotMove } from './utils/gameLogic';
 import { Volume2, Trophy, Coins, Home, Settings, Music, Brain, X, VolumeX } from 'lucide-react';
 import { DICE_SKINS, THEMES } from './constants';
@@ -39,6 +39,9 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
   const noiseBufferRef = useRef<AudioBuffer | null>(null); // For Dice Roll Sound
+  
+  // State Refs for Listeners (To avoid stale closures)
+  const musicEnabledRef = useRef(musicEnabled);
 
   // ANIMATION REFS
   const moveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -60,13 +63,12 @@ const App: React.FC = () => {
     myId: 'p1'
   });
 
-  // Ref to access state in event listeners
-  const gameStateRef = useRef<GameState>(gameState);
-  useEffect(() => {
-    gameStateRef.current = gameState;
-  }, [gameState]);
-
   const currentTheme = THEMES.find(t => t.id === currentThemeId) || THEMES[0];
+
+  // --- SYNC REF ---
+  useEffect(() => {
+    musicEnabledRef.current = musicEnabled;
+  }, [musicEnabled]);
 
   // --- AUDIO INITIALIZATION ---
   useEffect(() => {
@@ -93,9 +95,10 @@ const App: React.FC = () => {
 
     // 3. Autoplay / Interaction Handler
     const tryPlayMusic = () => {
-        if (musicEnabled && bgAudio.paused) {
+        // Use REF to check current preference, not stale closure
+        if (musicEnabledRef.current && bgAudio.paused) {
             bgAudio.play().catch(() => {
-                console.log("Waiting for user interaction to play music");
+                // Autoplay blocked, waiting for interaction
             });
         }
         
@@ -104,7 +107,8 @@ const App: React.FC = () => {
         }
     };
 
-    if (musicEnabled) tryPlayMusic();
+    // Attempt play on mount if enabled
+    if (musicEnabledRef.current) tryPlayMusic();
 
     const unlockAudio = () => {
         tryPlayMusic();
@@ -127,9 +131,10 @@ const App: React.FC = () => {
   // --- MUSIC TOGGLE EFFECT ---
   useEffect(() => {
       if (!bgMusicRef.current) return;
+      
       if (musicEnabled) {
           if (bgMusicRef.current.paused) {
-              bgMusicRef.current.play().catch(() => console.warn("Interaction needed for music"));
+              bgMusicRef.current.play().catch((e) => console.log("Playback failed (likely waiting for interaction):", e));
           }
       } else {
           bgMusicRef.current.pause();
@@ -339,7 +344,6 @@ const App: React.FC = () => {
           const newState = {
               ...prev,
               status: GameStatus.PLAYING,
-              canRoll: true,
               logs: [...prev.logs, "Host started the match!"]
           };
           syncStateToClients(newState);
@@ -352,33 +356,28 @@ const App: React.FC = () => {
   const handleRemoteAction = (data: any) => {
       if (!isHostRef.current) return;
       
-      // Use Ref for fresh state
-      const currentGs = gameStateRef.current;
-
       if (data.action === 'ROLL') {
-          handleRollDice(data.playerId, currentGs);
+          handleRollDice(data.playerId);
       } else if (data.action === 'MOVE') {
-          handlePieceClick(data.pieceId, data.playerId, currentGs);
+          handlePieceClick(data.pieceId, data.playerId);
       }
   };
 
-  const handleRollDice = (triggeringPlayerId?: string, overrideState?: GameState) => {
-    // Prefer passed state (from ref) for event listeners, else current state
-    const gs = overrideState || gameState;
-    const currentPlayer = gs.players[gs.currentTurnIndex];
+  const handleRollDice = (triggeringPlayerId?: string) => {
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer) return;
 
     // Online Client Logic
-    if (gs.mode === 'ONLINE' && !isHostRef.current) {
-        if (currentPlayer.id !== gs.myId) return;
-        connRef.current?.send({ type: 'ACTION', action: 'ROLL', playerId: gs.myId });
+    if (gameState.mode === 'ONLINE' && !isHostRef.current) {
+        if (currentPlayer.id !== gameState.myId) return; 
+        connRef.current?.send({ type: 'ACTION', action: 'ROLL', playerId: gameState.myId });
         return;
     }
 
     // Permission Logic
-    const actorId = triggeringPlayerId || gs.myId;
+    const actorId = triggeringPlayerId || gameState.myId;
     
-    if (gs.mode === 'LOCAL') {
+    if (gameState.mode === 'LOCAL') {
         // In Local Mode (Pass & Play), ignore identity check for humans.
         // Only prevent humans from rolling if it is explicitly a Bot's turn
         if (currentPlayer.isBot) return;
@@ -387,9 +386,9 @@ const App: React.FC = () => {
         if (currentPlayer.id !== actorId && !currentPlayer.isBot) return; 
     }
 
-    if (!gs.canRoll || gs.isDiceRolling) return;
+    if (!gameState.canRoll || gameState.isDiceRolling) return;
 
-    const stateWithRollAnim = { ...gs, isDiceRolling: true, canRoll: false };
+    const stateWithRollAnim = { ...gameState, isDiceRolling: true, canRoll: false };
     setGameState(stateWithRollAnim);
     playSound('roll');
     if (isHostRef.current) syncStateToClients(stateWithRollAnim);
@@ -474,22 +473,21 @@ const App: React.FC = () => {
     }
   }, [gameState.isDiceRolling, gameState.canRoll, gameState.waitingForMove, gameState.status]);
 
-  const handlePieceClick = (pieceId: number, triggeringPlayerId?: string, overrideState?: GameState) => {
-    const gs = overrideState || gameState;
-    const currentPlayer = gs.players[gs.currentTurnIndex];
+  const handlePieceClick = (pieceId: number, triggeringPlayerId?: string) => {
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer) return;
 
     // Online Client Logic
-    if (gs.mode === 'ONLINE' && !isHostRef.current) {
-        if (currentPlayer.id !== gs.myId) return;
-        connRef.current?.send({ type: 'ACTION', action: 'MOVE', pieceId, playerId: gs.myId });
+    if (gameState.mode === 'ONLINE' && !isHostRef.current) {
+        if (currentPlayer.id !== gameState.myId) return; 
+        connRef.current?.send({ type: 'ACTION', action: 'MOVE', pieceId, playerId: gameState.myId });
         return;
     }
 
     // Permission Logic
-    const actorId = triggeringPlayerId || gs.myId;
+    const actorId = triggeringPlayerId || gameState.myId;
     
-    if (gs.mode === 'LOCAL') {
+    if (gameState.mode === 'LOCAL') {
          // In Local Mode (Pass & Play), humans can interact for any human player
          if (currentPlayer.isBot) return;
     } else {
@@ -497,10 +495,10 @@ const App: React.FC = () => {
          if (currentPlayer.id !== actorId && !currentPlayer.isBot) return;
     }
 
-    if (!gs.waitingForMove) return;
+    if (!gameState.waitingForMove) return;
 
     // Trigger Animation instead of instant move
-    movePieceStepByStep(pieceId, gs.diceValue);
+    movePieceStepByStep(pieceId, gameState.diceValue);
   };
 
   const movePieceStepByStep = (pieceId: number, totalSteps: number) => {
@@ -968,22 +966,7 @@ const App: React.FC = () => {
         {/* Center: Board */}
         <div className="order-1 md:order-2 flex-1 flex items-center justify-center p-2 md:p-4 relative overflow-visible md:overflow-hidden flex-shrink-0">
              <div className="absolute w-[90%] aspect-square bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none"></div>
-             <Board
-                 gameState={gameState}
-                 onPieceClick={(id) => handlePieceClick(id)}
-                 theme={currentTheme}
-                 diceValue={gameState.diceValue}
-                 isDiceRolling={gameState.isDiceRolling}
-                 onDiceRoll={() => handleRollDice()}
-                 isDiceDisabled={
-                    !gameState.canRoll ||
-                    gameState.isDiceRolling ||
-                    (currentPlayer && currentPlayer.isBot && gameState.status === GameStatus.PLAYING) ||
-                    (gameState.mode === 'ONLINE' && currentPlayer && currentPlayer.id !== gameState.myId) ||
-                    !currentPlayer
-                 }
-                 diceSkin={currentSkinData}
-             />
+             <Board gameState={gameState} onPieceClick={(id) => handlePieceClick(id)} theme={currentTheme} />
              {gameState.status === GameStatus.FINISHED && (
                 <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-8 backdrop-blur-md animate-[fadeIn_0.5s]">
                    <Trophy size={100} className="text-yellow-400 mb-6 animate-bounce drop-shadow-[0_0_20px_rgba(250,204,21,0.5)]"/>
@@ -1017,22 +1000,23 @@ const App: React.FC = () => {
                 <div className="h-1 w-10 md:w-20 md:mx-auto mt-2 rounded-full shadow-[0_0_10px_currentColor]" style={{backgroundColor: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff', color: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#fff'}}></div>
              </div>
 
-             {/* Moved Dice to Board Center - Placeholder or Status info */}
              <div className="flex-1 flex items-center justify-end md:justify-center w-full my-0 md:my-4">
-                 <div className="text-center">
-                    <p className="text-xs text-slate-400 mb-2">Game Info</p>
-                    <div className="bg-white/5 p-3 rounded-xl border border-white/10">
-                        <div className="flex justify-between gap-4 text-xs font-mono">
-                           <span className="text-slate-500">Mode</span>
-                           <span className="text-white font-bold">{gameState.mode}</span>
-                        </div>
-                        {gameState.mode === 'ONLINE' && (
-                           <div className="flex justify-between gap-4 text-xs font-mono mt-2">
-                             <span className="text-slate-500">Host</span>
-                             <span className="text-white font-bold">{isHostRef.current ? 'You' : 'Remote'}</span>
-                           </div>
-                        )}
-                    </div>
+                 <div className="relative">
+                    <div className="absolute inset-0 blur-2xl opacity-40 transition-colors duration-500" style={{backgroundColor: currentPlayer ? currentTheme.palette[currentPlayer.color] : '#000'}}></div>
+                    <Dice 
+                        value={gameState.diceValue} 
+                        rolling={gameState.isDiceRolling} 
+                        onRoll={() => handleRollDice()}
+                        disabled={
+                            !gameState.canRoll || 
+                            gameState.isDiceRolling || 
+                            (currentPlayer && currentPlayer.isBot && gameState.status === GameStatus.PLAYING) || 
+                            (gameState.mode === 'ONLINE' && currentPlayer && currentPlayer.id !== gameState.myId) ||
+                            !currentPlayer
+                        }
+                        color={currentPlayer ? `text-[${currentTheme.palette[currentPlayer.color]}]` : 'text-white'}
+                        skinData={currentSkinData}
+                    />
                  </div>
              </div>
              

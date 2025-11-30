@@ -39,9 +39,6 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
   const noiseBufferRef = useRef<AudioBuffer | null>(null); // For Dice Roll Sound
-  
-  // State Refs for Listeners (To avoid stale closures)
-  const musicEnabledRef = useRef(musicEnabled);
 
   // ANIMATION REFS
   const moveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,11 +61,6 @@ const App: React.FC = () => {
   });
 
   const currentTheme = THEMES.find(t => t.id === currentThemeId) || THEMES[0];
-
-  // --- SYNC REF ---
-  useEffect(() => {
-    musicEnabledRef.current = musicEnabled;
-  }, [musicEnabled]);
 
   // --- AUDIO INITIALIZATION ---
   useEffect(() => {
@@ -95,10 +87,9 @@ const App: React.FC = () => {
 
     // 3. Autoplay / Interaction Handler
     const tryPlayMusic = () => {
-        // Use REF to check current preference, not stale closure
-        if (musicEnabledRef.current && bgAudio.paused) {
+        if (musicEnabled && bgAudio.paused) {
             bgAudio.play().catch(() => {
-                // Autoplay blocked, waiting for interaction
+                console.log("Waiting for user interaction to play music");
             });
         }
         
@@ -107,8 +98,7 @@ const App: React.FC = () => {
         }
     };
 
-    // Attempt play on mount if enabled
-    if (musicEnabledRef.current) tryPlayMusic();
+    if (musicEnabled) tryPlayMusic();
 
     const unlockAudio = () => {
         tryPlayMusic();
@@ -131,10 +121,9 @@ const App: React.FC = () => {
   // --- MUSIC TOGGLE EFFECT ---
   useEffect(() => {
       if (!bgMusicRef.current) return;
-      
       if (musicEnabled) {
           if (bgMusicRef.current.paused) {
-              bgMusicRef.current.play().catch((e) => console.log("Playback failed (likely waiting for interaction):", e));
+              bgMusicRef.current.play().catch(() => console.warn("Interaction needed for music"));
           }
       } else {
           bgMusicRef.current.pause();
